@@ -219,7 +219,7 @@ function sustainerParts(unit: SustainerUnit, depth: number, height: string, ctx:
     ...wholeOrSplit(ctx, `${sizeDir}/roof`, `${w}${depth} roof`, `${sizeDir}/roof/connector for split roof.stl`),
     {
       tidyPath: w === 'XL' ? `${family}/xl${h} facade.stl` : `${family}/facades/${w}${h} facade.stl`,
-      qty: 1, role: 'accent',
+      qty: 1, role: 'body',
     },
     { tidyPath: `${SUSTAINER_UNIVERSAL}/hinges/${hinge}.stl`, qty: 2, role: 'body', flags: [fromPicture] },
     {
@@ -242,7 +242,7 @@ function sustainerParts(unit: SustainerUnit, depth: number, height: string, ctx:
       flags: [fromPicture],
     },
     {
-      tidyPath: `${SUSTAINER_UNIVERSAL}/label for sustainers.stl`, qty: 1, role: 'accent',
+      tidyPath: `${SUSTAINER_UNIVERSAL}/label for sustainers.stl`, qty: 1, role: 'body',
       flags: [{
         kind: 'conflict',
         note: 'The naming page points at both "Label" and "Label for Sustainers" on sustainer facades; only "Label for Sustainers" is listed.',
@@ -271,16 +271,16 @@ function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: 
     ...drawerBox(unit, depth, h, resolver),
     {
       tidyPath: xl ? `${family}/xl facade ${h}.stl` : `${family}/facades/${w}${h}.stl`,
-      qty: 1, role: 'accent',
+      qty: 1, role: 'body',
     },
     ...(unit.key === 'hidden'
       ? [
           { tidyPath: `${UNIVERSAL}/hidden key.stl`, qty: 1, role: 'accent' as const },
-          { tidyPath: `${UNIVERSAL}/hidden key part 2.stl`, qty: 1, role: 'accent' as const },
+          { tidyPath: `${UNIVERSAL}/hidden key part 2.stl`, qty: 1, role: 'body' as const },
         ]
       : [
           { tidyPath: `${UNIVERSAL}/key.stl`, qty: 1, role: 'accent' as const },
-          { tidyPath: `${UNIVERSAL}/key cap.stl`, qty: 1, role: 'accent' as const },
+          { tidyPath: `${UNIVERSAL}/key cap.stl`, qty: 1, role: 'body' as const },
         ]),
     {
       tidyPath: `${UNIVERSAL}/springs.stl`, qty: 1, role: 'body',
@@ -290,8 +290,8 @@ function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: 
         source: 'Drawer Assembly p2; Springs.stl size',
       }],
     },
-    { tidyPath: `${UNIVERSAL}/facade cap.stl`, qty: 1, role: 'accent' },
-    { tidyPath: `${UNIVERSAL}/label.stl`, qty: 1, role: 'accent' },
+    { tidyPath: `${UNIVERSAL}/facade cap.stl`, qty: 1, role: 'body' },
+    { tidyPath: `${UNIVERSAL}/label.stl`, qty: 1, role: 'body' },
     {
       tidyPath: xl
         ? `${UNIVERSAL}/runners/xl runners/x${depth} runner slide xl.stl`

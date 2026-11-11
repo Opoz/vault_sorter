@@ -1,0 +1,111 @@
+import { describe, expect, it } from 'vitest'
+import {
+  addTower, moveRow, newLayout, placeUnit, removeUnit, rowProblems, setTowerWidth, updateTower,
+  type EditorLayout, type OpResult, type UnitSpec,
+} from './layoutOps'
+
+const drawer = (width: UnitSpec['width'], height: UnitSpec['height'] = '1F'): UnitSpec => ({ kind: 'drawer', width, height })
+const ok = (r: OpResult): EditorLayout => {
+  if (!r.ok) throw new Error(`expected success, got: ${r.reason}`)
+  return r.layout
+}
+
+function towerWith(...specs: UnitSpec[]) {
+  let layout = ok(addTower(newLayout('Test')))
+  const towerId = layout.towers[0].id
+  for (const spec of specs) layout = ok(placeUnit(layout, towerId, { kind: 'newRow', index: layout.towers[0].rows.length }, spec))
+  return { layout, towerId }
+}
+
+describe('layout editing', () => {
+  it('gives an empty tower the width of the first unit dropped into it', () => {
+    const { layout } = towerWith(drawer('M', '2F'))
+
+    expect(layout.towers[0].width).toBe('M')
+    expect(layout.towers[0].rows).toHaveLength(1)
+    expect(layout.towers[0].rows[0].height).toBe('2F')
+  })
+
+  // Instructions Manual p8: L = S+S, XL = S+M.
+  it('lets a second S sit beside an S in an L tower row', () => {
+    const { layout, towerId } = towerWith({ ...drawer('L') })
+    const s = ok(setTowerWidth(ok(removeUnit(layout, towerId, layout.towers[0].rows[0].units[0].id)), towerId, 'L'))
+    const withOne = ok(placeUnit(s, towerId, { kind: 'newRow', index: 0 }, drawer('S')))
+    const rowId = withOne.towers[0].rows[0].id
+
+    const withTwo = ok(placeUnit(withOne, towerId, { kind: 'beside', rowId }, drawer('S')))
+
+    expect(withTwo.towers[0].rows[0].units.map((u) => u.width)).toEqual(['S', 'S'])
+    expect(rowProblems(withTwo.towers[0])).toEqual([])
+  })
+
+  it('refuses a unit that would overfill a row, and says why', () => {
+    const { layout, towerId } = towerWith(drawer('L'))
+    const rowId = layout.towers[0].rows[0].id
+
+    const result = placeUnit(layout, towerId, { kind: 'beside', rowId }, drawer('S'))
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/full|room/i)
+  })
+
+  it('refuses a unit of a different height beside another in the same row', () => {
+    const { layout, towerId } = towerWith(drawer('L'))
+    const narrowed = ok(placeUnit(
+      ok(removeUnit(layout, towerId, layout.towers[0].rows[0].units[0].id)), towerId, { kind: 'newRow', index: 0 }, drawer('S'),
+    ))
+    // Tower is now S wide; widen it so the row has room for a second S.
+    const wide = ok(setTowerWidth(narrowed, towerId, 'L'))
+
+    const result = placeUnit(wide, towerId, { kind: 'beside', rowId: wide.towers[0].rows[0].id }, drawer('S', '2F'))
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/height|1F/i)
+  })
+
+  it('refuses an XL unit taller than 1F', () => {
+    const result = placeUnit(ok(addTower(newLayout('Test'))), 'missing', { kind: 'newRow', index: 0 }, drawer('XL', '2F'))
+    expect(result.ok).toBe(false)
+  })
+
+  it('flags a row that is not yet full instead of refusing it', () => {
+    const { layout, towerId } = towerWith(drawer('S'))
+    const wide = ok(setTowerWidth(layout, towerId, 'L'))
+
+    expect(rowProblems(wide.towers[0])).toEqual([{ rowIndex: 0, problem: expect.stringMatching(/another S/) }])
+  })
+
+  it('removes a row when its last unit goes, and resets an emptied tower', () => {
+    const { layout, towerId } = towerWith(drawer('M'))
+
+    const empty = ok(removeUnit(layout, towerId, layout.towers[0].rows[0].units[0].id))
+
+    expect(empty.towers[0].rows).toEqual([])
+    expect(empty.towers[0].width).toBeNull()
+  })
+
+  it('moves a row up or down the tower', () => {
+    const { layout, towerId } = towerWith(drawer('M', '1F'), drawer('M', '2F'), drawer('M', '4F'))
+
+    const moved = ok(moveRow(layout, towerId, 2, 0))
+
+    expect(moved.towers[0].rows.map((r) => r.height)).toEqual(['4F', '1F', '2F'])
+  })
+
+  it('refuses to narrow a tower below a row that needs the width', () => {
+    const { layout, towerId } = towerWith(drawer('L'))
+
+    const result = setTowerWidth(layout, towerId, 'S')
+
+    expect(result.ok).toBe(false)
+  })
+
+  it('clears wheels, feet or casters when the roof becomes an under-table mount', () => {
+    const { layout, towerId } = towerWith(drawer('M'))
+    const wheeled = ok(updateTower(layout, towerId, { bottom: 'wheels' }))
+
+    const hung = ok(updateTower(wheeled, towerId, { roof: 'under table mount' }))
+
+    expect(hung.towers[0].bottom).toBe('none')
+  })
+})

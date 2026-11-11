@@ -1,122 +1,353 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import {
+  DndContext, DragOverlay, KeyboardSensor, MeasuringStrategy, PointerSensor, pointerWithin, useDroppable, useSensor,
+  useSensors, type CollisionDetection, type DragEndEvent, type DragStartEvent,
+} from '@dnd-kit/core'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { depthOptions } from './engine/depth'
+import { partsForTower, UnavailableError } from './engine/parts'
+import {
+  addTower, moveUnit, placeUnit, removeUnit, toEngineTower, type DropTarget, type EditorLayout, type UnitSpec,
+} from './editor/layoutOps'
+import { HEIGHTS, WIDTHS, type Depth, type Unit } from './engine/model'
+import { catalog, printers, printerSource } from './ui/data'
+import { towerHeightMm, WHEEL_MM, WIDTH_MM } from './ui/dims'
+import { Inspector, type TowerInfo } from './ui/Inspector'
+import { Palette, PALETTE_SCALE } from './ui/Palette'
+import { TowerView } from './ui/TowerView'
+import { UnitBlock } from './ui/UnitBlock'
+import { specKey } from './ui/text'
+import { useEditor, type Editor } from './ui/useEditor'
 
-function App() {
-  const [count, setCount] = useState(0)
+/**
+ * Pixels per mm for the canvas: the tallest tower fills about three quarters of its height and every tower
+ * fits across, within sensible limits.
+ */
+function useCanvasScale(layout: EditorLayout) {
+  const [size, setSize] = useState({ width: 800, height: 600 })
+  const observer = useRef<ResizeObserver | null>(null)
+  const ref = useCallback((el: HTMLElement | null) => {
+    observer.current?.disconnect()
+    if (!el) return
+    observer.current = new ResizeObserver(([entry]) =>
+      setSize({ width: entry.contentRect.width, height: entry.contentRect.height }))
+    observer.current.observe(el)
+  }, [])
+  const tallest = Math.max(400, ...layout.towers.map((t) =>
+    towerHeightMm(t.rows, t.roof !== 'none', t.bottom !== 'none') + (t.bottom === 'wheels' ? WHEEL_MM / 2 : 0)))
+  const across = layout.towers.reduce((sum, t) => sum + (t.width ? WIDTH_MM[t.width] : 250), 0) + 250
+  const gaps = (layout.towers.length + 1) * 70
+  // Leave room for the drop gaps that open between rows during a drag, so the canvas never has to scroll then.
+  const mostRows = Math.max(0, ...layout.towers.map((t) => t.rows.length))
+  const fitHeight = Math.min(((size.height - 120 - 48 - mostRows * 14) * 0.85) / tallest, 1.4)
+  const fitWidth = (size.width - gaps) / across
+  // Shrink to fit every tower across, but not below a readable size: past that, the canvas scrolls sideways.
+  return { ref, scale: Math.max(0.3, Math.min(fitHeight, Math.max(fitWidth, 0.9))) }
+}
+
+/**
+ * Drop on whatever is under the pointer, most specific first: a gap, slot or button, then a tower's
+ * column (adds on top), and the bare canvas (new tower) only when nothing else is there.
+ */
+const dropRank = (id: string | number) => (id === 'canvas' ? 2 : String(id).startsWith('tower:') ? 1 : 0)
+const dropUnderPointer: CollisionDetection = (args) => {
+  const hits = pointerWithin(args)
+  if (hits.length === 0) return hits
+  const best = Math.min(...hits.map((h) => dropRank(h.id)))
+  return hits.filter((h) => dropRank(h.id) === best)
+}
+
+// Gaps open up between rows once a drag starts, so drop zones must be re-measured as the layout shifts.
+const MEASURING = { droppable: { strategy: MeasuringStrategy.Always, frequency: 100 } }
+
+interface DropNotice { x: number; y: number; text: string }
+
+type DragData =
+  | { type: 'palette'; spec: UnitSpec }
+  | { type: 'unit'; towerId: string; unitId: string; spec: UnitSpec }
+type DropData =
+  | { type: 'gap'; towerId: string; index: number }
+  | { type: 'slot'; towerId: string; rowId: string }
+  | { type: 'newTower'; useEmptyTower?: boolean }
+  | { type: 'trash' }
+
+export default function App() {
+  const editor = useEditor()
+  const { layout, printer } = editor
+  const [dragging, setDragging] = useState<DragData | null>(null)
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor),
+  )
+
+  const info = useMemo(() => towerInfo(layout, printer), [layout, printer])
+  const paletteFit = useMemo(() => unitFitByPrinter(printer, layout.splitParts), [printer, layout.splitParts])
+  const { ref: canvasRef, scale } = useCanvasScale(layout)
+  const [dropNotice, setDropNotice] = useState<DropNotice | null>(null)
+
+  useEffect(() => {
+    if (!dropNotice) return
+    const timer = setTimeout(() => setDropNotice(null), 4500)
+    return () => clearTimeout(timer)
+  }, [dropNotice])
+
+  function onDragStart(e: DragStartEvent) {
+    setDragging((e.active.data.current as DragData) ?? null)
+  }
+
+  function onDragEnd(e: DragEndEvent) {
+    setDragging(null)
+    const drag = e.active.data.current as DragData | undefined
+    const drop = e.over?.data.current as DropData | undefined
+    if (!drag || !drop) return
+    if (drop.type === 'trash') {
+      if (drag.type === 'unit') editor.apply(removeUnit(layout, drag.towerId, drag.unitId))
+      return
+    }
+    let base: EditorLayout = layout
+    let towerId: string
+    let target: DropTarget
+    const emptyTower = layout.towers.find((t) => t.rows.length === 0)
+    if (drop.type === 'newTower' && drop.useEmptyTower && emptyTower) {
+      // Dropping on the bare canvas fills an empty tower before starting another one.
+      towerId = emptyTower.id
+      target = { kind: 'newRow', index: 0 }
+    } else if (drop.type === 'newTower') {
+      const created = addTower(layout)
+      if (!created.ok) return
+      base = created.layout
+      towerId = base.towers[base.towers.length - 1].id
+      target = { kind: 'newRow', index: 0 }
+    } else {
+      towerId = drop.towerId
+      target = drop.type === 'gap' ? { kind: 'newRow', index: drop.index } : { kind: 'beside', rowId: drop.rowId }
+    }
+    const result = drag.type === 'palette'
+      ? placeUnit(base, towerId, target, drag.spec)
+      : moveUnit(base, drag.towerId, drag.unitId, towerId, target)
+    const pointer = e.activatorEvent as PointerEvent
+    if (!result.ok && typeof pointer.clientX === 'number') {
+      // Explain a refused drop right where it happened, not in a corner of the screen.
+      setDropNotice({ x: pointer.clientX + e.delta.x, y: pointer.clientY + e.delta.y, text: result.reason })
+      return
+    }
+    setDropNotice(null)
+    if (editor.apply(result) && drag.type === 'palette') editor.setSelection({ type: 'tower', towerId })
+  }
+
+  function addFromPalette(spec: UnitSpec) {
+    let base = layout
+    let tower = editor.selection ? base.towers.find((t) => t.id === editor.selection!.towerId) : base.towers.at(-1)
+    if (!tower) {
+      const created = addTower(base)
+      if (!created.ok) return
+      base = created.layout
+      tower = base.towers.at(-1)!
+    }
+    editor.apply(placeUnit(base, tower.id, { kind: 'newRow', index: tower.rows.length }, spec))
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="app">
+      <TopBar editor={editor} />
+      {!editor.persistent && (
+        <p className="banner">This browser isn't letting the page save, so layouts last only until you close the tab.</p>
+      )}
+      {editor.unreadable.length > 0 && (
+        <p className="banner">{editor.unreadable.length} saved layout(s) couldn't be read and were skipped.</p>
+      )}
+      <DndContext sensors={sensors} collisionDetection={dropUnderPointer} measuring={MEASURING} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
+        <div className="workbench">
+          <Palette colours={layout.colours} onAdd={addFromPalette} fit={paletteFit} printerName={printer.name} />
+          <Canvas
+            canvasRef={canvasRef}
+            active={dragging !== null}
+            hint={(() => {
+              const empty = layout.towers.findIndex((t) => t.rows.length === 0)
+              return empty >= 0 ? `Drop to start tower ${empty + 1}` : 'Drop to start a new tower'
+            })()}
+            onClickEmpty={() => editor.setSelection(null)}>
+            <div className="towers">
+              {layout.towers.map((tower, i) => {
+                const t = info.get(tower.id)
+                return (
+                  <TowerView
+                    key={tower.id}
+                    tower={tower}
+                    index={i}
+                    colours={layout.colours}
+                    scale={scale}
+                    depth={t?.depth}
+                    fitState={fitState(t)}
+                    selection={editor.selection}
+                    dragging={dragging !== null}
+                    onSelect={editor.setSelection}
+                  />
+                )
+              })}
+              <NewTowerDrop
+                active={dragging !== null}
+                onAdd={() => {
+                  const r = addTower(layout)
+                  if (editor.apply(r) && r.ok) editor.setSelection({ type: 'tower', towerId: r.layout.towers.at(-1)!.id })
+                }}
+              />
+            </div>
+            <div className="floor" aria-hidden="true" />
+            {dragging?.type === 'unit' && <Trash />}
+          </Canvas>
+          <aside className="inspector">
+            {editor.notice && (
+              <p className="notice" role="status">
+                {editor.notice}
+                <button type="button" className="link" onClick={() => editor.setNotice(null)}>Dismiss</button>
+              </p>
+            )}
+            <Inspector editor={editor} info={info} />
+          </aside>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+        {/* Rendered at the top of the page, outside the scrolling canvas, so moving it repaints cleanly. */}
+        {createPortal(
+          <DragOverlay dropAnimation={null} className="drag-preview">
+            {dragging && (
+              <UnitBlock {...dragging.spec} colours={layout.colours} scale={dragging.type === 'palette' ? Math.max(PALETTE_SCALE, scale) : scale} />
+            )}
+          </DragOverlay>,
+          document.body,
+        )}
+      </DndContext>
+      {dropNotice && (
+        <p className="drop-notice" role="alert" style={{ left: dropNotice.x, top: dropNotice.y }}>
+          {dropNotice.text}
+        </p>
+      )}
+      <footer className="footer">
+        An unofficial planner for USSA's Vault. You need your own copy of the Vault files to print anything.
+        Printer sizes from Bambu Studio ({printerSource.split('@')[1]?.slice(0, 7)}).
+      </footer>
+    </div>
   )
 }
 
-export default App
+function TopBar({ editor }: { editor: Editor }) {
+  const { layout, layouts } = editor
+  return (
+    <header className="topbar">
+      <h1 className="brand">Vault Planner</h1>
+      <div className="layout-picker">
+        <label className="sr-only" htmlFor="layout-select">Layout</label>
+        <select id="layout-select" value={layout.id} onChange={(e) => editor.open(e.target.value)}>
+          {layouts.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+        <button type="button" onClick={editor.create}>New layout</button>
+        <button type="button" onClick={() => editor.duplicate(layout.id)}>Duplicate</button>
+        <button
+          type="button"
+          className="danger"
+          onClick={() => { if (window.confirm(`Delete "${layout.name}"? This can't be undone.`)) editor.remove(layout.id) }}
+        >
+          Delete
+        </button>
+      </div>
+      <label className="printer-picker">
+        <span>Printer</span>
+        <select value={editor.printer.id} onChange={(e) => editor.setPrinterId(e.target.value)}>
+          {printers.map((p) => (
+            <option key={p.id} value={p.id}>{p.name.replace('Bambu Lab ', '')} ({p.bed.width} × {p.bed.depth} × {p.height} mm)</option>
+          ))}
+        </select>
+      </label>
+    </header>
+  )
+}
+
+function Canvas({ canvasRef, active, hint, onClickEmpty, children }: {
+  canvasRef: (el: HTMLElement | null) => void
+  active: boolean
+  hint: string
+  onClickEmpty: () => void
+  children: ReactNode
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'canvas', data: { type: 'newTower', useEmptyTower: true } })
+  const ref = useCallback((el: HTMLElement | null) => { setNodeRef(el); canvasRef(el) }, [setNodeRef, canvasRef])
+  return (
+    <main
+      ref={ref}
+      className={`canvas${active && isOver ? ' is-over' : ''}`}
+      aria-label="Towers"
+      onClick={(e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('towers')) onClickEmpty() }}
+    >
+      {children}
+      {active && isOver && <p className="canvas-hint">{hint}</p>}
+    </main>
+  )
+}
+
+function NewTowerDrop({ active, onAdd }: { active: boolean; onAdd: () => void }) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'new-tower', data: { type: 'newTower' } })
+  return (
+    <button ref={setNodeRef} type="button" className={`new-tower${active ? ' is-active' : ''}${isOver ? ' is-over' : ''}`} onClick={onAdd}>
+      {active ? 'Drop to start a new tower' : 'Add a tower'}
+    </button>
+  )
+}
+
+function Trash() {
+  const { setNodeRef, isOver } = useDroppable({ id: 'trash', data: { type: 'trash' } })
+  return <div ref={setNodeRef} className={`trash${isOver ? ' is-over' : ''}`}>Drop here to remove</div>
+}
+
+function towerInfo(layout: EditorLayout, printer: Editor['printer']): Map<string, TowerInfo> {
+  const map = new Map<string, TowerInfo>()
+  const options = { catalog, printer, splitParts: layout.splitParts }
+  for (const tower of layout.towers) {
+    const probe = toEngineTower(tower, 3)
+    if (!probe) {
+      map.set(tower.id, {})
+      continue
+    }
+    const { depth: _ignored, ...withoutDepth } = probe
+    try {
+      const choice = depthOptions(withoutDepth, options)
+      const depth = tower.depth ?? choice.suggested
+      const parts = depth ? partsForTower({ ...probe, depth }, options) : undefined
+      map.set(tower.id, { choice, depth, parts })
+    } catch (e) {
+      map.set(tower.id, { error: e instanceof UnavailableError ? e.message : String(e) })
+    }
+  }
+  return map
+}
+
+/**
+ * For the palette: the largest depth at which each Unit's own parts fit the printer, or null if none does.
+ * Roof and base are left out, since they depend on the tower, not the unit.
+ */
+function unitFitByPrinter(printer: Editor['printer'], splitParts: EditorLayout['splitParts']) {
+  const fit = new Map<string, Depth | null>()
+  for (const kind of ['drawer', 'sustainer'] as const) {
+    for (const width of WIDTHS) {
+      for (const height of HEIGHTS) {
+        if (width === 'XL' && height !== '1F') continue
+        const unit: Unit = kind === 'drawer'
+          ? { kind, width, baseplate: 'none', gearedRails: false, key: 'normal' }
+          : { kind, width, moduleType: 'flat' }
+        const choice = depthOptions(
+          { width, roof: 'none', bottom: 'none', backbone: 'none', rows: [{ height, units: [unit] }] },
+          { catalog, printer, splitParts },
+        )
+        fit.set(specKey({ kind, width, height }), choice.suggested ?? null)
+      }
+    }
+  }
+  return fit
+}
+
+
+function fitState(t: TowerInfo | undefined): 'fits' | 'tight' | 'none' | 'incomplete' {
+  if (!t?.choice) return 'incomplete'
+  const chosen = t.choice.options.find((o) => o.depth === t.depth)
+  if (!chosen) return 'none'
+  if (!chosen.fits) return 'none'
+  return chosen.tight.length ? 'tight' : 'fits'
+}
