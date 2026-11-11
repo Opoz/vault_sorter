@@ -6,6 +6,7 @@ Usage (from this folder):
 Per part, in the orientation the file is stored in (its print orientation):
     size     bounding size [x, y, z] in mm
     volume   mesh volume in mm^3
+    area     surface area in mm^2 (for estimating printed weight: walls follow the surface)
     outline  top-down convex outline, at most MAX_OUTLINE corners, relative to the bounding-box
              corner and drawn slightly outside the part, so a fit test on it never over-promises.
 No geometry beyond that leaves this script. The input folder is only read.
@@ -112,6 +113,7 @@ def measure_file(path):
     lo = np.full(3, np.inf)
     hi = np.full(3, -np.inf)
     volume = 0.0
+    area = 0.0
     hull = np.empty((0, 2))
     for v in _triangle_chunks(path):
         v = v[np.isfinite(v).all(axis=(1, 2))]
@@ -119,6 +121,7 @@ def measure_file(path):
             continue
         a, b, c = v[:, 0], v[:, 1], v[:, 2]
         volume += float(np.einsum("ij,ij->i", a, np.cross(b, c)).sum()) / 6.0
+        area += float(np.linalg.norm(np.cross(b - a, c - a), axis=1).sum()) / 2.0
         p = v.reshape(-1, 3)
         lo = np.minimum(lo, p.min(axis=0))
         hi = np.maximum(hi, p.max(axis=0))
@@ -127,6 +130,7 @@ def measure_file(path):
     return {
         "size": [round(float(s), 2) for s in hi - lo],
         "volume": round(abs(volume), 1),  # one known file is wound inside-out; magnitude is what matters
+        "area": round(area, 1),
         "outline": _round_outward(outline),
     }
 

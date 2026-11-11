@@ -18,6 +18,8 @@ export interface PartLine {
   readonly path: string
   readonly qty: number
   readonly role: ColourRole
+  /** Where the part and its count come from, e.g. "Drawer Assembly pp1–8". */
+  readonly source: string
   readonly flags: readonly Flag[]
 }
 
@@ -32,20 +34,34 @@ interface Want {
   qty: number
   role: ColourRole
   flags?: Flag[]
+  source?: string
 }
+
+const SOURCES = {
+  drawer: 'Drawer Assembly pp1–8; Instructions Manual p11',
+  sustainer: 'Instructions Manual p12 and p17',
+  roof: 'Instructions Manual p10 and p18',
+  bottom: 'Modifications pp2–6 and p17',
+  backbone: 'Modifications pp7–11',
+}
+const from = (source: string, wants: Want[]): Want[] => wants.map((w) => ({ ...w, source: w.source ?? source }))
 
 /** Every Part needed to build one Tower. Lines for the same file are combined. */
 export function partsForTower(tower: Tower, options: PartsOptions): PartLine[] {
   validateTower(tower)
   const resolver = createResolver(options.catalog)
   const ctx: Ctx = { ...options, resolver, splitParts: options.splitParts ?? 'auto' }
-  const wants: Want[] = [...roofParts(tower, resolver), ...bottomParts(tower, ctx), ...backboneParts(tower)]
+  const wants: Want[] = [
+    ...from(SOURCES.roof, roofParts(tower, resolver)),
+    ...from(SOURCES.bottom, bottomParts(tower, ctx)),
+    ...from(SOURCES.backbone, backboneParts(tower)),
+  ]
   for (const row of tower.rows) {
     for (const unit of row.units) {
       wants.push(
         ...(unit.kind === 'drawer'
-          ? drawerParts(unit, tower.depth, row.height, resolver)
-          : sustainerParts(unit, tower.depth, row.height, ctx)),
+          ? from(SOURCES.drawer, drawerParts(unit, tower.depth, row.height, resolver))
+          : from(SOURCES.sustainer, sustainerParts(unit, tower.depth, row.height, ctx))),
       )
     }
   }
@@ -310,7 +326,7 @@ function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: 
 
   if (unit.gearedRails) {
     wants.push({
-      tidyPath: `${UNIVERSAL}/geared rails/${w} rails.stl`, qty: 2, role: 'body',
+      tidyPath: `${UNIVERSAL}/geared rails/${w} rails.stl`, qty: 2, role: 'body', source: 'Drawer Assembly p4',
       flags: [{
         kind: 'inferred',
         note: 'Top and bottom rails per box; each rail file holds one rail (about 12 mm wide), so 2 prints.',
@@ -324,7 +340,7 @@ function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: 
     const dir = `${sizeDir}/gridfinity baseplate`
     const whole = `${dir}/${w}${depth} baseplate${suffix}.stl`
     if (resolver.find(whole)) {
-      wants.push({ tidyPath: whole, qty: 1, role: 'body' })
+      wants.push({ tidyPath: whole, qty: 1, role: 'body', source: 'Instructions Manual p9 and p11' })
     } else if (unit.baseplate === 'plain' && resolver.find(`${dir}/${w}${depth} baseplate part 1.stl`)) {
       wants.push(...splitOnly(dir, `${w}${depth} baseplate`, `${w}${depth} baseplate`))
     } else {
@@ -370,7 +386,7 @@ function splitOnly(dir: string, stem: string, what: string): Want[] {
 }
 
 function combine(lines: (Want & { path: string })[]): PartLine[] {
-  const byPath = new Map<string, { path: string; qty: number; role: ColourRole; flags: Flag[] }>()
+  const byPath = new Map<string, { path: string; qty: number; role: ColourRole; source: string; flags: Flag[] }>()
   for (const l of lines) {
     const existing = byPath.get(l.path)
     if (existing) {
@@ -379,7 +395,7 @@ function combine(lines: (Want & { path: string })[]): PartLine[] {
         if (!existing.flags.some((e) => e.note === f.note)) existing.flags.push(f)
       }
     } else {
-      byPath.set(l.path, { path: l.path, qty: l.qty, role: l.role, flags: [...(l.flags ?? [])] })
+      byPath.set(l.path, { path: l.path, qty: l.qty, role: l.role, source: l.source ?? 'File tree only', flags: [...(l.flags ?? [])] })
     }
   }
   return [...byPath.values()]

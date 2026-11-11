@@ -1,6 +1,9 @@
 import type { DepthChoice } from '../engine/depth'
 import type { Baseplate, Depth, RoofType, Width } from '../engine/model'
-import type { PartLine } from '../engine/parts'
+import type { TowerDimensions } from '../engine/dimensions'
+import type { FilamentEstimate } from '../engine/filament'
+import type { HardwareLine } from '../engine/hardware'
+import type { Flag, PartLine } from '../engine/parts'
 import {
   removeTower, removeUnit, rowProblems, setTowerWidth, updateLayout, updateTower, updateUnit,
   type EditorTower, type EditorUnit,
@@ -13,6 +16,9 @@ export interface TowerInfo {
   depth?: Depth
   choice?: DepthChoice
   parts?: PartLine[]
+  hardware?: HardwareLine[]
+  grams?: FilamentEstimate
+  dimensions?: TowerDimensions
   error?: string
 }
 
@@ -25,7 +31,7 @@ export function Inspector({ editor, info }: { editor: Editor; info: Map<string, 
     if (row && unit) return <UnitPanel editor={editor} tower={tower} unit={unit} height={row.height} />
   }
   if (tower) return <TowerPanel editor={editor} tower={tower} info={info.get(tower.id) ?? {}} />
-  return <LayoutPanel editor={editor} />
+  return <LayoutPanel editor={editor} info={info} />
 }
 
 function UnitPanel({ editor, tower, unit, height }: { editor: Editor; tower: EditorTower; unit: EditorUnit; height: string }) {
@@ -141,7 +147,10 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
         </select>
       </Field>
 
+      {info.dimensions && <SizeSummary dims={info.dimensions} />}
+      {info.grams && <FilamentSummary grams={info.grams} colours={editor.layout.colours} />}
       {info.parts && <PartsSummary parts={info.parts} colours={editor.layout.colours} />}
+      {info.hardware && info.hardware.length > 0 && <HardwareSummary lines={info.hardware} />}
 
       <div className="panel-actions">
         <button type="button" className="danger" onClick={() => editor.apply(removeTower(editor.layout, tower.id)) && editor.setSelection(null)}>
@@ -190,6 +199,7 @@ function DepthPicker({ tower, info, onPick, printer }: { tower: EditorTower; inf
 function PartsSummary({ parts, colours }: { parts: PartLine[]; colours: { body: string; accent: string } }) {
   const total = parts.reduce((s, l) => s + l.qty, 0)
   const flagged = parts.filter((l) => l.flags.length > 0)
+  const seen = new Set<string>()
   return (
     <details className="parts" style={{ '--swatch-body': colours.body, '--swatch-accent': colours.accent } as React.CSSProperties}>
       <summary>{total} parts to print{flagged.length ? `, ${flagged.length} need checking` : ''}</summary>
@@ -201,11 +211,18 @@ function PartsSummary({ parts, colours }: { parts: PartLine[]; colours: { body: 
               <td>
                 <span className={`swatch swatch-${l.role}`} aria-label={l.role === 'body' ? 'Body colour' : 'Accent colour'} />
                 {fileName(l.path)}
-                {l.flags.map((f) => (
-                  <span key={f.note} className={`flag flag-${f.kind}`}>
-                    {f.kind === 'conflict' ? 'Manuals disagree: ' : 'Inferred: '}{f.note} <cite>{f.source}</cite>
-                  </span>
-                ))}
+                <cite className="line-source">{l.source}</cite>
+                {l.flags.map((f) => {
+                  // Spell each note out once; later lines with the same note just point back to it.
+                  const repeat = seen.has(f.note)
+                  seen.add(f.note)
+                  return (
+                    <span key={f.note} className={`flag flag-${f.kind}`}>
+                      {f.kind === 'conflict' ? 'Manuals disagree' : 'Inferred'}
+                      {repeat ? ', as noted above' : <>: {f.note} <cite>{f.source}</cite></>}
+                    </span>
+                  )
+                })}
               </td>
             </tr>
           ))}
@@ -215,7 +232,97 @@ function PartsSummary({ parts, colours }: { parts: PartLine[]; colours: { body: 
   )
 }
 
-function LayoutPanel({ editor }: { editor: Editor }) {
+function SizeSummary({ dims }: { dims: TowerDimensions }) {
+  return (
+    <div className="summary">
+      <h3>Size</h3>
+      <p className="size-line">
+        {dims.widthMm.toFixed(0)} wide × {dims.depthMm.toFixed(0)} deep × {dims.heightMm.toFixed(0)} mm tall
+      </p>
+      <p className="muted small">
+        {dims.breakdown.map((b) => `${b.label} ${b.mm.toFixed(1)}`).join(', ')} mm. Wheels and feet not included.
+      </p>
+      <Flags flags={dims.flags} />
+    </div>
+  )
+}
+
+function FilamentSummary({ grams, colours }: { grams: FilamentEstimate; colours: { body: string; accent: string } }) {
+  return (
+    <div className="summary" style={{ '--swatch-body': colours.body, '--swatch-accent': colours.accent } as React.CSSProperties}>
+      <h3>Filament</h3>
+      <p className="size-line">About {formatGrams(grams.total)}</p>
+      <p className="small">
+        <span className="swatch swatch-body" aria-hidden="true" />Body {formatGrams(grams.body)}
+        <span className="swatch swatch-accent" aria-hidden="true" style={{ marginLeft: '0.9rem' }} />Accent {formatGrams(grams.accent)}
+      </p>
+      <p className="muted small">Parts only, at Bambu Studio's default settings. Supports and colour-change purge aren't included.</p>
+    </div>
+  )
+}
+
+function HardwareSummary({ lines }: { lines: HardwareLine[] }) {
+  const flagged = lines.filter((l) => l.flags.length > 0).length
+  return (
+    <details className="parts">
+      <summary>Hardware to buy{flagged ? `, ${flagged} need checking` : ''}</summary>
+      <table>
+        <tbody>
+          {lines.map((l) => (
+            <tr key={l.item} className={l.flags.length ? 'is-flagged' : ''}>
+              <td className="qty">{l.qty}×</td>
+              <td>{l.item}<cite className="line-source">{l.source}</cite><Flags flags={l.flags} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
+  )
+}
+
+function Flags({ flags }: { flags: readonly Flag[] }) {
+  return (
+    <>
+      {flags.map((f) => (
+        <span key={f.note} className={`flag flag-${f.kind}`}>
+          {f.kind === 'conflict' ? 'Manuals disagree: ' : 'Inferred: '}{f.note} <cite>{f.source}</cite>
+        </span>
+      ))}
+    </>
+  )
+}
+
+const formatGrams = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(2)} kg` : `${Math.round(g)} g`)
+
+function LayoutTotals({ info }: { info: Map<string, TowerInfo> }) {
+  const towers = [...info.values()].filter((t) => t.parts)
+  if (towers.length === 0) return null
+  const parts = towers.reduce((n, t) => n + t.parts!.reduce((m, l) => m + l.qty, 0), 0)
+  const grams = towers.reduce((g, t) => ({
+    body: g.body + (t.grams?.body ?? 0), accent: g.accent + (t.grams?.accent ?? 0), total: g.total + (t.grams?.total ?? 0),
+  }), { body: 0, accent: 0, total: 0 })
+  const hardware = new Map<string, number>()
+  for (const t of towers) for (const h of t.hardware ?? []) hardware.set(h.item, (hardware.get(h.item) ?? 0) + h.qty)
+  return (
+    <div className="summary">
+      <h3>Whole layout</h3>
+      <p className="size-line">{parts} parts, about {formatGrams(grams.total)}</p>
+      <p className="muted small">Body {formatGrams(grams.body)}, accent {formatGrams(grams.accent)}. Towers still being built aren't counted.</p>
+      {hardware.size > 0 && (
+        <details className="parts">
+          <summary>Hardware for every tower</summary>
+          <table>
+            <tbody>
+              {[...hardware].map(([item, qty]) => <tr key={item}><td className="qty">{qty}×</td><td>{item}</td></tr>)}
+            </tbody>
+          </table>
+        </details>
+      )}
+    </div>
+  )
+}
+
+function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, TowerInfo> }) {
   const { layout } = editor
   const set = (patch: Parameters<typeof updateLayout>[1]) => editor.apply(updateLayout(layout, patch))
   return (
@@ -243,6 +350,7 @@ function LayoutPanel({ editor }: { editor: Editor }) {
         <input type="checkbox" checked={layout.allowColourMixing} onChange={(e) => set({ allowColourMixing: e.target.checked })} />
         Mix body and accent parts on one plate (needs an AMS)
       </label>
+      <LayoutTotals info={info} />
       <p className="muted">Select a tower or a unit to change it.</p>
     </section>
   )

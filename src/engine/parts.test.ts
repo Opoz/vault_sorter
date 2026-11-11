@@ -190,6 +190,17 @@ describe('partsForTower', () => {
     })
   })
 
+  it('names where every part comes from, so the list can be checked against the manuals', () => {
+    const t = tower({
+      width: 'M', depth: 7, roof: 'grid', bottom: 'wheels', backbone: 'matching',
+      rows: [
+        { height: '2F', units: [drawer('M', { baseplate: 'plain', gearedRails: true })] },
+        { height: '1F', units: [{ kind: 'sustainer', width: 'M', moduleType: 'flat' }] },
+      ],
+    })
+    for (const line of partsForTower(t, opts)) expect(line.source, line.path).toMatch(/\bpp?\d+|File tree/)
+  })
+
   // Instructions Manual p8: "L in width equals S+S".
   it('counts parts for two drawers side by side in one Row', () => {
     const t = tower({ width: 'L', depth: 4, rows: [{ height: '2F', units: [drawer('S'), drawer('S')] }] })

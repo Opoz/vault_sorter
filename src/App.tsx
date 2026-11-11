@@ -5,6 +5,9 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { depthOptions } from './engine/depth'
+import { towerDimensions } from './engine/dimensions'
+import { filamentEstimate } from './engine/filament'
+import { hardwareForTower } from './engine/hardware'
 import { partsForTower, UnavailableError } from './engine/parts'
 import {
   addTower, moveUnit, placeUnit, removeUnit, toEngineTower, type DropTarget, type EditorLayout, type UnitSpec,
@@ -34,7 +37,7 @@ function useCanvasScale(layout: EditorLayout) {
     observer.current.observe(el)
   }, [])
   const tallest = Math.max(400, ...layout.towers.map((t) =>
-    towerHeightMm(t.rows, t.roof !== 'none', t.bottom !== 'none') + (t.bottom === 'wheels' ? WHEEL_MM / 2 : 0)))
+    towerHeightMm(t.rows, t.roof, t.bottom !== 'none') + (t.bottom === 'wheels' ? WHEEL_MM / 2 : 0)))
   const across = layout.towers.reduce((sum, t) => sum + (t.width ? WIDTH_MM[t.width] : 250), 0) + 250
   const gaps = (layout.towers.length + 1) * 70
   // Leave room for the drop gaps that open between rows during a drag, so the canvas never has to scroll then.
@@ -178,6 +181,7 @@ export default function App() {
                     colours={layout.colours}
                     scale={scale}
                     depth={t?.depth}
+                    heightMm={t?.dimensions?.heightMm}
                     fitState={fitState(t)}
                     selection={editor.selection}
                     dragging={dragging !== null}
@@ -273,9 +277,13 @@ function Canvas({ canvasRef, active, hint, onClickEmpty, children }: {
   return (
     <main
       ref={ref}
-      className={`canvas${active && isOver ? ' is-over' : ''}`}
+      className={`canvas${active ? ' is-dragging' : ''}${active && isOver ? ' is-over' : ''}`}
       aria-label="Towers"
-      onClick={(e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('towers')) onClickEmpty() }}
+      onClick={(e) => {
+        // Empty space deselects, including the empty part of a tower's column; a tower's name selects it.
+        const el = e.target as HTMLElement
+        if (el === e.currentTarget || el.classList.contains('towers') || el.classList.contains('tower')) onClickEmpty()
+      }}
     >
       {children}
       {active && isOver && <p className="canvas-hint">{hint}</p>}
@@ -310,8 +318,14 @@ function towerInfo(layout: EditorLayout, printer: Editor['printer']): Map<string
     try {
       const choice = depthOptions(withoutDepth, options)
       const depth = tower.depth ?? choice.suggested
-      const parts = depth ? partsForTower({ ...probe, depth }, options) : undefined
-      map.set(tower.id, { choice, depth, parts })
+      const built = depth ? { ...probe, depth } : undefined
+      const parts = built ? partsForTower(built, options) : undefined
+      map.set(tower.id, {
+        choice, depth, parts,
+        hardware: hardwareForTower(probe),
+        grams: parts ? filamentEstimate(parts, catalog) : undefined,
+        dimensions: built ? towerDimensions(built, options) : undefined,
+      })
     } catch (e) {
       map.set(tower.id, { error: e instanceof UnavailableError ? e.message : String(e) })
     }

@@ -13,20 +13,23 @@ interface Props {
   colours: Colours
   scale: number
   depth: Depth | undefined
+  /** Height from the engine's measured dimensions, when the tower is complete. */
+  heightMm?: number
   fitState: 'fits' | 'tight' | 'none' | 'incomplete'
   selection: Selection
   dragging: boolean
   onSelect: (s: Selection) => void
 }
 
-export function TowerView({ tower, index, colours, scale, depth, fitState, selection, dragging, onSelect }: Props) {
+export function TowerView({ tower, index, colours, scale, depth, heightMm: measuredHeight, fitState, selection, dragging, onSelect }: Props) {
   const width = tower.width
   const problems = rowProblems(tower)
   const isSelected = selection?.type === 'tower' && selection.towerId === tower.id
   const hasBase = tower.bottom !== 'none'
   const towerPx = width ? WIDTH_MM[width] * scale : 150
   const rowsTopFirst = [...tower.rows].map((row, i) => ({ row, i })).reverse()
-  const heightMm = towerHeightMm(tower.rows, tower.roof !== 'none', hasBase)
+  const drawnHeight = towerHeightMm(tower.rows, tower.roof, hasBase)
+  const heightMm = measuredHeight ?? drawnHeight
   // The whole column above and around a tower is a safe zone: dropping anywhere in it adds to the top.
   const { setNodeRef: zoneRef, isOver: zoneOver } = useDroppable({
     id: `tower:${tower.id}`, data: { type: 'gap', towerId: tower.id, index: tower.rows.length },
@@ -52,7 +55,7 @@ export function TowerView({ tower, index, colours, scale, depth, fitState, selec
         ) : (
           <div className="tower-stack">
             {tower.roof !== 'none' && tower.roof !== 'under table mount' && (
-              <div className="tower-roof" style={{ height: Math.max(ROOF_MM * scale, 6) }} title={`${tower.roof} roof`} />
+              <div className="tower-roof" style={{ height: Math.max(ROOF_MM[tower.roof] * scale, 4) }} title={`${tower.roof} roof`} />
             )}
             {tower.roof === 'under table mount' && <div className="tower-table" title="Under-table mount" />}
             <Gap towerId={tower.id} index={tower.rows.length} active={dragging} top />
@@ -78,7 +81,7 @@ export function TowerView({ tower, index, colours, scale, depth, fitState, selec
           </div>
         )}
         {tower.rows.length > 0 && width && (
-          <div className="dim dim-height" style={{ height: heightMm * scale }}>
+          <div className="dim dim-height" style={{ height: drawnHeight * scale }}>
             <span>{Math.round(heightMm)} mm</span>
           </div>
         )}
@@ -163,11 +166,15 @@ function PlacedUnit(props: {
   )
 }
 
+/**
+ * A drop zone on the seam between rows (or above the top row). It takes no space, so picking a unit up never
+ * moves the tower: its hit area overlays the seam, and a bar shows where the unit will go.
+ */
 function Gap({ towerId, index, active, top }: { towerId: string; index: number; active: boolean; top?: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: `gap:${towerId}:${index}`, data: { type: 'gap', towerId, index } })
   return (
-    <div ref={setNodeRef} className={`gap${top ? ' gap-top' : ''}${active ? ' is-active' : ''}${isOver ? ' is-over' : ''}`}>
-      {top && active && <span>Add on top</span>}
+    <div className={`gap${top ? ' gap-top' : ''}${active ? ' is-active' : ''}${isOver ? ' is-over' : ''}`}>
+      <div ref={setNodeRef} className="gap-hit">{top && active && <span>Add on top</span>}</div>
     </div>
   )
 }

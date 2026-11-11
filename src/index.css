@@ -147,6 +147,13 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
   border: 0; background: none; padding: 0.2rem 0; margin-bottom: 0.5rem; text-align: left;
 }
 .tower-name { font-weight: 600; }
+/*
+ * While dragging, the roof lifts to open a slot for "Add on top" between it and the top row. It moves by
+ * transform only, so nothing else shifts; the name lifts with it (towers stand on the floor, units stay put).
+ */
+.canvas.is-dragging .tower-head { margin-bottom: calc(0.5rem + 60px); }
+.tower-roof, .tower-table { transition: transform 140ms ease; }
+.canvas.is-dragging .tower-roof, .canvas.is-dragging .tower-table { transform: translateY(-60px); }
 .tower-meta { display: flex; gap: 0.5rem; align-items: center; color: var(--ink-soft); font-size: 0.85rem; }
 .tower.is-selected .tower-name { color: var(--select); }
 .tower-body { position: relative; display: flex; align-items: flex-end; }
@@ -166,17 +173,21 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
 .placed.is-dragging { opacity: 0.35; }
 
 .gap { position: relative; height: 0; font-size: 0.75rem; color: var(--select); }
-/*
- * While dragging, each gap's drop area reaches 3 px past what it shows, over the seams between rows,
- * so there is no sliver where the pointer falls through to the tower behind it.
- */
-.gap.is-active { z-index: 1; height: 20px; margin: -3px 0; }
-.gap::before { content: ''; position: absolute; inset: 3px 0; border-radius: var(--unit-radius); }
-.gap.is-over::before { background: rgb(47 111 235 / 0.22); outline: 2px dashed var(--select); outline-offset: -2px; }
-.gap-top.is-active { height: 50px; margin: 0 0 -3px; }
-.gap-top.is-active::before { inset: 0 0 7px; border: 2px dashed rgb(47 111 235 / 0.45); }
-.gap-top.is-over::before, .tower.is-zone-over .gap-top::before { border-color: var(--select); background: rgb(47 111 235 / 0.15); outline: 0; }
-.gap-top span { position: absolute; inset: 0 0 7px; display: grid; place-items: center; }
+/* The hit area overlays the seam (10 px either side) and takes no space, so the tower never moves mid-drag. */
+.gap-hit { position: absolute; left: 0; right: 0; top: -11px; height: 22px; z-index: 2; display: none; }
+.gap.is-active .gap-hit { display: block; }
+.gap.is-over .gap-hit::before {
+  content: ''; position: absolute; left: -4px; right: -4px; top: 8px; height: 6px;
+  border-radius: 3px; background: var(--select); box-shadow: 0 0 0 3px rgb(47 111 235 / 0.25);
+}
+/* Above the top row, the zone sits in the empty space over the tower. */
+.gap-top .gap-hit {
+  top: auto; bottom: 0; height: 56px; display: none; place-items: center;
+  border: 2px dashed rgb(47 111 235 / 0.45); border-radius: var(--unit-radius);
+}
+.gap-top.is-active .gap-hit { display: grid; }
+.gap-top.is-over .gap-hit, .tower.is-zone-over .gap-top .gap-hit { border-color: var(--select); background: rgb(47 111 235 / 0.12); }
+.gap-top.is-over .gap-hit::before { display: none; }
 .slot {
   display: grid; place-items: center; padding: 0 4px; text-align: center;
   font-size: 0.7rem; color: #6d4a0f; border: 1px dashed var(--warn); border-radius: var(--unit-radius);
@@ -238,7 +249,8 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
 /* Its own compositing layer, so a preview moving over it never leaves stale pixels behind. */
 .canvas { isolation: isolate; transform: translateZ(0); }
 .trash {
-  position: sticky; bottom: 1rem; align-self: center; margin-top: 1rem;
+  /* Floats over the canvas: appearing must not push the towers around mid-drag. */
+  position: absolute; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 3;
   padding: 0.75rem 1.5rem; border-radius: 999px; background: var(--panel); border: 2px dashed var(--bad); color: var(--bad);
 }
 .trash.is-over { background: var(--bad); color: var(--panel); }
@@ -268,6 +280,11 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
 .depth-why { font-size: 0.8rem; }
 .depth-why.fit-fits { color: var(--ink-soft); }
 
+.summary { display: flex; flex-direction: column; gap: 0.2rem; padding-top: 0.75rem; border-top: 1px solid var(--line); }
+.summary h3 { margin: 0; font-size: 0.85rem; font-weight: 500; color: var(--ink-soft); }
+.summary p { margin: 0; }
+.size-line { font-size: 1.05rem; font-weight: 600; }
+.small { font-size: 0.8rem; }
 .parts summary { cursor: pointer; font-weight: 600; }
 .parts table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.85rem; }
 .parts td { padding: 0.25rem 0; vertical-align: top; border-top: 1px solid rgb(185 188 184 / 0.5); }
@@ -275,6 +292,7 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
 .swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.4rem; vertical-align: -1px; box-shadow: inset 0 0 0 1px rgb(36 39 42 / 0.3); }
 .swatch-body { background: var(--swatch-body, var(--line)); }
 .swatch-accent { background: var(--swatch-accent, var(--ink)); }
+.line-source { display: block; font-style: normal; font-size: 0.74rem; color: var(--ink-soft); }
 .flag { display: block; margin-top: 0.15rem; font-size: 0.78rem; color: #6d4a0f; }
 .flag-conflict { color: var(--bad); }
 .flag cite { font-style: normal; color: var(--ink-soft); }
@@ -295,5 +313,6 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .tower-roof, .tower-table { transition: none; }
   .gap { transition: none; }
 }

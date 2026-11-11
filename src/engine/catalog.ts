@@ -9,6 +9,8 @@ export interface PartMeasure {
   readonly size: readonly [number, number, number]
   /** Volume in mm³. */
   readonly volume: number
+  /** Surface area in mm². */
+  readonly area: number
   /** Top-down convex outline in mm, drawn slightly outside the part. */
   readonly outline: readonly Point[]
 }
