@@ -16,7 +16,7 @@ interface Props {
 }
 
 export function Palette({ colours, fit, printerName, onAdd }: Props) {
-  const printer = printerName.replace('Bambu Lab ', '')
+  const printer = printerName
   return (
     <nav className="palette" aria-label="Units">
       <p className="palette-hint">Drag a unit onto a tower, or press one to add it to the selected tower.</p>

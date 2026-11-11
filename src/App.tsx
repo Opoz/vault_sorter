@@ -13,7 +13,7 @@ import {
   addTower, moveUnit, placeUnit, removeUnit, toEngineTower, type DropTarget, type EditorLayout, type UnitSpec,
 } from './editor/layoutOps'
 import { HEIGHTS, WIDTHS, type Depth, type Unit } from './engine/model'
-import { catalog, printers, printerSource } from './ui/data'
+import { catalog, printerLabel, printers, printerSource } from './ui/data'
 import { towerHeightMm, WHEEL_MM, WIDTH_MM } from './ui/dims'
 import { Inspector, type TowerInfo } from './ui/Inspector'
 import { Palette, PALETTE_SCALE } from './ui/Palette'
@@ -161,7 +161,7 @@ export default function App() {
       )}
       <DndContext sensors={sensors} collisionDetection={dropUnderPointer} measuring={MEASURING} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
         <div className="workbench">
-          <Palette colours={layout.colours} onAdd={addFromPalette} fit={paletteFit} printerName={printer.name} />
+          <Palette colours={layout.colours} onAdd={addFromPalette} fit={paletteFit} printerName={printerLabel(printer)} />
           <Canvas
             canvasRef={canvasRef}
             active={dragging !== null}
@@ -257,7 +257,7 @@ function TopBar({ editor }: { editor: Editor }) {
         <span>Printer</span>
         <select value={editor.printer.id} onChange={(e) => editor.setPrinterId(e.target.value)}>
           {printers.map((p) => (
-            <option key={p.id} value={p.id}>{p.name.replace('Bambu Lab ', '')} ({p.bed.width} × {p.bed.depth} × {p.height} mm)</option>
+            <option key={p.id} value={p.id}>{printerLabel(p)} ({p.bed.width} × {p.bed.depth} × {p.height} mm)</option>
           ))}
         </select>
       </label>
@@ -282,7 +282,7 @@ function Canvas({ canvasRef, active, hint, onClickEmpty, children }: {
       onClick={(e) => {
         // Empty space deselects, including the empty part of a tower's column; a tower's name selects it.
         const el = e.target as HTMLElement
-        if (el === e.currentTarget || el.classList.contains('towers') || el.classList.contains('tower')) onClickEmpty()
+        if (el === e.currentTarget || el.classList.contains('towers')) onClickEmpty()
       }}
     >
       {children}

@@ -69,6 +69,7 @@ class MeasureFileTest(unittest.TestCase):
         self.assertEqual(m["size"], [10.0, 20.0, 30.0])
         self.assertAlmostEqual(m["volume"], 6000.0, places=1)
         self.assertAlmostEqual(m["area"], 2 * (10 * 20 + 10 * 30 + 20 * 30), places=1)
+        self.assertEqual(m["triangles"], 12)
         self.assertEqual(sorted(map(tuple, m["outline"])), [(0, 0), (0, 20), (10, 0), (10, 20)])
 
     def test_round_part_outline_is_simplified_but_never_cuts_into_the_part(self):

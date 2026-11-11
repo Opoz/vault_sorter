@@ -30,6 +30,9 @@ async function resolved(name) {
   return merged
 }
 
+/** Corner points of an area given as ["0x0", "340x0", ...] or "0x0,325x0,...". */
+const areaPoints = (points) => (Array.isArray(points) ? points : points.split(',')).filter(Boolean).map((p) => p.split('x').map(Number))
+
 /** Width and depth of a printable area given as ["0x0", "340x0", ...] or "0x0,325x0,...". */
 function areaSize(points) {
   const list = (Array.isArray(points) ? points : points.split(',')).map((p) => p.split('x').map(Number))
@@ -63,12 +66,27 @@ for (const name of subPath.keys()) {
     bed,
     height,
     plate: { ...plate, height: plateHeight },
-    excludedAreas: (p.bed_exclude_area ?? []).filter((a) => a && a !== '0x0'),
+    // Areas of the plate the printer reserves: a corner (bed_exclude_area) or a strip at the back
+    // (wrapping_exclude_area). Each is one outline; empty ones are left out.
+    excluded: [p.bed_exclude_area, p.wrapping_exclude_area]
+      .map((a) => areaPoints(a ?? []))
+      .filter((pts) => pts.length >= 3 && pts.some(([x, y]) => x !== 0 || y !== 0)),
   })
+}
+// Printers that Bambu lists separately but share one profile in practice: listed once, under both names.
+const SAME_AS = { 'Bambu Lab X1': 'Bambu Lab X1 Carbon' }
+for (const [alias, main] of Object.entries(SAME_AS)) {
+  const a = printers.find((p) => p.name === alias)
+  const m = printers.find((p) => p.name === main)
+  if (!a || !m) continue
+  const same = JSON.stringify([a.bed, a.height, a.excluded]) === JSON.stringify([m.bed, m.height, m.excluded])
+  if (!same) throw new Error(`${alias} no longer matches ${main}; check before merging them`)
+  printers.splice(printers.indexOf(a), 1)
+  m.label = `${main.replace('Bambu Lab ', '')} / ${alias.replace('Bambu Lab ', '')}`
 }
 printers.sort((a, b) => a.name.localeCompare(b.name))
 
 const out = new URL('../../src/data/printers.json', import.meta.url)
 await writeFile(out, JSON.stringify({ source: `${REPO}@${commit}`, printers }, null, 2) + '\n')
 console.log(`${printers.length} printers from ${REPO}@${commit.slice(0, 7)}`)
-for (const p of printers) console.log(`  ${p.name.padEnd(26)} ${p.bed.width} × ${p.bed.depth} × ${p.height}${p.excludedAreas.length ? '  (has excluded areas)' : ''}`)
+for (const p of printers) console.log(`  ${p.name.padEnd(26)} ${p.bed.width} × ${p.bed.depth} × ${p.height}${p.excluded.length ? `  (${p.excluded.length} reserved area${p.excluded.length > 1 ? 's' : ''})` : ''}`)

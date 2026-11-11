@@ -52,6 +52,10 @@ Width, then Depth, then Height, e.g. `S3 1F`. A Family is one Width across all i
 One printed copy of one Vault file. A Unit needs several Parts; print progress is counted in Parts.
 _Avoid_: File, piece, model, STL (an STL is the source file a Part is printed from)
 
+**Bambu project**:
+The `.3mf` file exported for one Tower: its Parts arranged on Plates, with Bambu Studio's settings for the chosen printer, ready to open and print.
+_Avoid_: Project (on its own), export, print file
+
 **Plate**:
 One print job's worth of Parts, arranged to fit the chosen printer's bed.
 _Avoid_: Bed, batch, job

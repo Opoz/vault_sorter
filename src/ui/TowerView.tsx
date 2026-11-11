@@ -38,6 +38,10 @@ export function TowerView({ tower, index, colours, scale, depth, heightMm: measu
   return (
     <figure
       ref={zoneRef}
+      onClick={(e) => {
+        // Anywhere on a tower selects it, unless the click was on a unit (which selects the unit).
+        if (!(e.target as HTMLElement).closest('.placed')) onSelect({ type: 'tower', towerId: tower.id })
+      }}
       className={`tower${isSelected ? ' is-selected' : ''}${dragging && zoneOver ? ' is-zone-over' : ''}`}
       style={{ '--tower-w': `${towerPx}px` } as CSSProperties}
     >

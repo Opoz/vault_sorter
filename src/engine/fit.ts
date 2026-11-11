@@ -6,6 +6,8 @@ export interface PrinterBed {
   readonly bed: { readonly width: number; readonly depth: number }
   /** Printable height in mm. */
   readonly height: number
+  /** Areas of the plate the printer reserves (e.g. a corner or a strip at the back), as outlines in mm. */
+  readonly excluded?: readonly (readonly Point[])[]
 }
 
 export interface Fit {

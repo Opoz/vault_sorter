@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { addTower, newLayout, type EditorLayout, type OpResult } from '../editor/layoutOps'
 import { createLayoutStore, type KeyValueStorage } from '../editor/storage'
-import { DEFAULT_PRINTER_ID, printers, type Printer } from './data'
+import { DEFAULT_PRINTER_ID, findPrinter, type Printer } from './data'
 
 export type Selection =
   | { readonly type: 'tower'; readonly towerId: string }
@@ -48,7 +48,7 @@ export function useEditor() {
   const [notice, setNotice] = useState<string | null>(null)
 
   const layout = layouts.find((l) => l.id === currentId) ?? layouts[0]
-  const printer: Printer = printers.find((p) => p.id === printerId) ?? printers.find((p) => p.id === DEFAULT_PRINTER_ID)!
+  const printer: Printer = findPrinter(printerId) ?? findPrinter(DEFAULT_PRINTER_ID)!
 
   const refresh = useCallback(() => setLayouts(store.list()), [store])
 

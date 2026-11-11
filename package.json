@@ -9,12 +9,14 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:slice": "vitest run src/export/bambu3mf.slice.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "fflate": "^0.8.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

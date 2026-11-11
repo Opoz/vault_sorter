@@ -5,10 +5,12 @@ import type { FilamentEstimate } from '../engine/filament'
 import type { HardwareLine } from '../engine/hardware'
 import type { Flag, PartLine } from '../engine/parts'
 import {
-  removeTower, removeUnit, rowProblems, setTowerWidth, updateLayout, updateTower, updateUnit,
+  removeTower, removeUnit, rowProblems, setTowerWidth, toEngineTower, updateLayout, updateTower, updateUnit,
   type EditorTower, type EditorUnit,
 } from '../editor/layoutOps'
 import { depthMm } from './dims'
+import { printerLabel } from './data'
+import { ExportPanel } from './ExportPanel'
 import { describe } from './text'
 import type { Editor } from './useEditor'
 
@@ -25,12 +27,24 @@ export interface TowerInfo {
 export function Inspector({ editor, info }: { editor: Editor; info: Map<string, TowerInfo> }) {
   const { layout, selection } = editor
   const tower = selection && layout.towers.find((t) => t.id === selection.towerId)
-  if (selection?.type === 'unit' && tower) {
-    const row = tower.rows.find((r) => r.units.some((u) => u.id === selection.unitId))
-    const unit = row?.units.find((u) => u.id === selection.unitId)
-    if (row && unit) return <UnitPanel editor={editor} tower={tower} unit={unit} height={row.height} />
-  }
-  if (tower) return <TowerPanel editor={editor} tower={tower} info={info.get(tower.id) ?? {}} />
+  const row = selection?.type === 'unit' ? tower?.rows.find((r) => r.units.some((u) => u.id === selection.unitId)) : undefined
+  const unit = row?.units.find((u) => selection?.type === 'unit' && u.id === selection.unitId)
+  const index = tower ? layout.towers.indexOf(tower) : -1
+
+  // Where you are, with a way back up: Layout › Tower 2 › M 1F drawer.
+  const crumbs = (
+    <nav className="crumbs" aria-label="Where you are">
+      {tower ? <button type="button" className="link" onClick={() => editor.setSelection(null)}>{layout.name}</button> : <span>{layout.name}</span>}
+      {tower && <span aria-hidden="true">›</span>}
+      {tower && (unit
+        ? <button type="button" className="link" onClick={() => editor.setSelection({ type: 'tower', towerId: tower.id })}>Tower {index + 1}</button>
+        : <span>Tower {index + 1}</span>)}
+      {unit && row && <><span aria-hidden="true">›</span><span>{describe(unit.kind, unit.width, row.height)}</span></>}
+    </nav>
+  )
+
+  if (tower && unit && row) return <>{crumbs}<UnitPanel editor={editor} tower={tower} unit={unit} height={row.height} /></>
+  if (tower) return <>{crumbs}<TowerPanel editor={editor} tower={tower} info={info.get(tower.id) ?? {}} /></>
   return <LayoutPanel editor={editor} info={info} />
 }
 
@@ -116,7 +130,7 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
           {problems.map((p) => <li key={p.rowIndex}>Row {p.rowIndex + 1}: {p.problem}</li>)}
         </ul>
       )}
-      {info.choice && <DepthPicker tower={tower} info={info} onPick={(depth) => set({ depth })} printer={editor.printer.name} />}
+      {info.choice && <DepthPicker tower={tower} info={info} onPick={(depth) => set({ depth })} printer={printerLabel(editor.printer)} />}
       {info.error && <p className="problems">{info.error}</p>}
 
       <Field label="Roof">
@@ -151,6 +165,10 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
       {info.grams && <FilamentSummary grams={info.grams} colours={editor.layout.colours} />}
       {info.parts && <PartsSummary parts={info.parts} colours={editor.layout.colours} />}
       {info.hardware && info.hardware.length > 0 && <HardwareSummary lines={info.hardware} />}
+      {info.depth && info.parts && (() => {
+        const built = toEngineTower(tower, info.depth)
+        return built ? <ExportPanel editor={editor} tower={built} towerName={`Tower ${index + 1}`} /> : null
+      })()}
 
       <div className="panel-actions">
         <button type="button" className="danger" onClick={() => editor.apply(removeTower(editor.layout, tower.id)) && editor.setSelection(null)}>
@@ -322,6 +340,33 @@ function LayoutTotals({ info }: { info: Map<string, TowerInfo> }) {
   )
 }
 
+function TowerList({ editor, info }: { editor: Editor; info: Map<string, TowerInfo> }) {
+  const towers = editor.layout.towers
+  return (
+    <div className="summary">
+      <h3>Towers</h3>
+      {towers.length === 0 && <p className="small muted">Drag a unit onto the canvas to start a tower.</p>}
+      <ul className="tower-list">
+        {towers.map((t, i) => {
+          const d = info.get(t.id)
+          const rows = t.rows.length
+          const detail = !t.width ? 'empty' : `${t.width}${d?.depth ?? ''}, ${rows} row${rows === 1 ? '' : 's'}`
+          return (
+            <li key={t.id}>
+              <button type="button" onClick={() => editor.setSelection({ type: 'tower', towerId: t.id })}>
+                <span className="tower-list-name">Tower {i + 1}</span>
+                <span className="muted">{detail}</span>
+                <span className="tower-list-go" aria-hidden="true">Settings ›</span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="small muted">Or click a tower on the canvas. Click empty space to come back here.</p>
+    </div>
+  )
+}
+
 function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, TowerInfo> }) {
   const { layout } = editor
   const set = (patch: Parameters<typeof updateLayout>[1]) => editor.apply(updateLayout(layout, patch))
@@ -350,8 +395,8 @@ function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, Tower
         <input type="checkbox" checked={layout.allowColourMixing} onChange={(e) => set({ allowColourMixing: e.target.checked })} />
         Mix body and accent parts on one plate (needs an AMS)
       </label>
+      <TowerList editor={editor} info={info} />
       <LayoutTotals info={info} />
-      <p className="muted">Select a tower or a unit to change it.</p>
     </section>
   )
 }
