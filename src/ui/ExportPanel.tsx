@@ -48,11 +48,13 @@ export function ExportPanel({ editor, tower, towerName }: { editor: Editor; towe
     tower, towerName, printer, catalog,
     splitParts: editor.layout.splitParts,
     allowColourMixing: editor.layout.allowColourMixing,
+    plateEdgeMm: editor.layout.plateEdgeMm,
+    plateDensity: editor.layout.plateDensity,
     colours: editor.layout.colours,
   }
   const plates = useMemo(() => {
     try { return platesFor(req) } catch { return undefined }
-  }, [tower, printer, editor.layout.splitParts, editor.layout.allowColourMixing]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tower, printer, editor.layout.splitParts, editor.layout.allowColourMixing, editor.layout.plateEdgeMm, editor.layout.plateDensity]) // eslint-disable-line react-hooks/exhaustive-deps
   const templated = hasTemplate(printer.id)
   const estimate = plates ? estimateProjectBytes(plates, catalog) : 0
 
@@ -102,6 +104,12 @@ export function ExportPanel({ editor, tower, towerName }: { editor: Editor; towe
     <div className="summary export">
       <h3>Print files</h3>
       {plates && <p className="size-line">{plates.length} plates{templated ? `, about ${sizeText(estimate)}` : ''}</p>}
+      {plates && plates.filter((p) => p.edgeMm < editor.layout.plateEdgeMm - 0.01).map((p) => (
+        <p key={p.index} className="small export-warning">
+          Plate {p.index}: {p.items[0].path.split('/').pop()!.replace(/\.stl$/i, '')} only fits {p.edgeMm.toFixed(1)} mm
+          from the edge (you chose {editor.layout.plateEdgeMm} mm), so it prints on a plate of its own.
+        </p>
+      ))}
 
       <p className="small folder-line">
         {folder.kind === 'checking' && 'Looking for your Vault folder…'}

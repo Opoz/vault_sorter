@@ -302,6 +302,11 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
 .colour-row { display: grid; grid-template-columns: auto 1fr; column-gap: 0.75rem; align-items: center; }
 .colour-row input { grid-row: span 2; }
 .colour-name { font-weight: 600; }
+.plate-settings { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.plate-settings legend { font-size: 0.85rem; font-weight: 500; color: var(--ink-soft); margin-bottom: 0.35rem; padding: 0; }
+.plate-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.mm-input { display: flex; align-items: center; gap: 0.4rem; }
+.mm-input input { width: 5rem; }
 .colours input[type='color'] { width: 64px; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: var(--radius-control); background: none; }
 .panel-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--line); }
 .notice {

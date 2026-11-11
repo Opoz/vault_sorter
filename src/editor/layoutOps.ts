@@ -5,6 +5,7 @@
 import type {
   Baseplate, Bottom, Depth, DrawerUnit, Height, RoofType, SustainerUnit, Tower, Unit, Width,
 } from '../engine/model'
+import { DEFAULT_EDGE_MARGIN_MM, type Density } from '../engine/plates'
 
 export interface EditorDrawer extends DrawerUnit { readonly id: string }
 export interface EditorSustainer extends SustainerUnit { readonly id: string }
@@ -41,6 +42,10 @@ export interface EditorLayout {
   readonly towers: readonly EditorTower[]
   readonly splitParts: 'auto' | 'whole' | 'split'
   readonly allowColourMixing: boolean
+  /** Gap kept between parts and the plate edge, in mm. */
+  readonly plateEdgeMm: number
+  /** How close parts sit to each other on a plate. */
+  readonly plateDensity: Density
   readonly colours: Colours
   readonly updatedAt: number
 }
@@ -69,6 +74,7 @@ export const DEFAULT_COLOURS: Colours = { body: '#D3D5D2', accent: '#8A8F93', se
 export function newLayout(name: string): EditorLayout {
   return {
     id: newId(), name, towers: [], splitParts: 'auto', allowColourMixing: false,
+    plateEdgeMm: DEFAULT_EDGE_MARGIN_MM, plateDensity: 'normal',
     colours: DEFAULT_COLOURS, updatedAt: Date.now(),
   }
 }
@@ -229,7 +235,8 @@ export function updateUnit(layout: EditorLayout, towerId: string, unitId: string
 }
 
 export function updateLayout(
-  layout: EditorLayout, patch: Partial<Pick<EditorLayout, 'name' | 'splitParts' | 'allowColourMixing' | 'colours'>>,
+  layout: EditorLayout,
+  patch: Partial<Pick<EditorLayout, 'name' | 'splitParts' | 'allowColourMixing' | 'colours' | 'plateEdgeMm' | 'plateDensity'>>,
 ): OpResult {
   return done({ ...layout, ...patch })
 }

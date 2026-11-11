@@ -5,6 +5,7 @@ import type { TowerDimensions } from '../engine/dimensions'
 import type { FilamentEstimate } from '../engine/filament'
 import type { HardwareLine } from '../engine/hardware'
 import type { ColourRole, Flag, PartLine } from '../engine/parts'
+import { DENSITY_SPACING_MM, SMALL_PART_EDGE_MM, type Density } from '../engine/plates'
 import {
   removeTower, removeUnit, rowProblems, setTowerWidth, toEngineTower, updateLayout, updateTower, updateUnit,
   type Colours, type EditorTower, type EditorUnit,
@@ -431,6 +432,35 @@ function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, Tower
         <input type="checkbox" checked={layout.allowColourMixing} onChange={(e) => set({ allowColourMixing: e.target.checked })} />
         Mix colours on one plate (needs an AMS)
       </label>
+      <fieldset className="plate-settings">
+        <legend>Plates</legend>
+        <div className="plate-fields">
+          <Field label="Gap from the plate edge">
+            <span className="mm-input">
+              <input
+                type="number" min={1} max={30} step={0.5} value={layout.plateEdgeMm}
+                onChange={(e) => {
+                  const mm = Number(e.target.value)
+                  if (Number.isFinite(mm)) set({ plateEdgeMm: Math.min(30, Math.max(1, mm)) })
+                }}
+              />
+              mm
+            </span>
+          </Field>
+          <Field label="Space between parts">
+            <select value={layout.plateDensity} onChange={(e) => set({ plateDensity: e.target.value as Density })}>
+              <option value="roomy">Roomy ({DENSITY_SPACING_MM.roomy} mm)</option>
+              <option value="normal">Normal ({DENSITY_SPACING_MM.normal} mm)</option>
+              <option value="tight">Tight ({DENSITY_SPACING_MM.tight} mm)</option>
+            </select>
+          </Field>
+        </div>
+        <p className="small muted">
+          Parts share a plate only within this gap. A part that can't keep it anywhere (one lying diagonally, say)
+          prints on a plate of its own with as much as it can get, and the print files say so. Small parts go in front
+          of the others, at least {SMALL_PART_EDGE_MM} mm from the edges when there's room.
+        </p>
+      </fieldset>
       <TowerList editor={editor} info={info} />
       <LayoutTotals info={info} />
     </section>

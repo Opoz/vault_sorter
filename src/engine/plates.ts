@@ -3,6 +3,10 @@
  * turned 0° or 90° from that rectangle's own axis, with a gap between parts; rectangles are packed with
  * MaxRects. A part that only fits the bed turned diagonally (XL modules on the H2S) gets a plate to itself.
  * Plates hold one Colour role unless colours may mix; TPU parts always get their own plates.
+ *
+ * Large parts are packed from the back; small ones go just in front of them, clear of the plate edges, and the
+ * whole group is then centred. Small parts fail most behind other parts and near the edges, where the first
+ * layer is hardest to watch (issue #6).
  */
 import type { Catalog, PartMeasure, Point } from './catalog'
 import { checkFit, type PrinterBed } from './fit'
@@ -29,6 +33,11 @@ export interface PackedPlate {
   readonly role: ColourRole | 'mixed'
   readonly material: Material
   readonly items: readonly PlacedItem[]
+  /**
+   * The smallest gap between a part and the plate edge. Less than the chosen edge margin only on a plate whose one
+   * part can't keep that margin anywhere; the user should be told.
+   */
+  readonly edgeMm: number
 }
 
 export interface PackOptions {
@@ -36,21 +45,46 @@ export interface PackOptions {
   readonly printer: PrinterBed
   readonly allowColourMixing: boolean
   readonly spacingMm?: number
-  /** Gap kept from the plate's edges (Bambu Studio's strict upload check wants about 1 mm). */
+  /**
+   * Gap kept from the plate's edges; parts only share a plate within it. A part that can't keep it even alone is
+   * still printed, on a plate of its own, with the most it can get: the default 1 mm (which Bambu Studio's
+   * strict upload check wants), then the tight margin, then an exact fit.
+   */
   readonly edgeMarginMm?: number
   /** Smaller gap allowed on a plate whose part can't lie straight otherwise (L parts on 330 mm beds). */
   readonly tightEdgeMarginMm?: number
 }
 
+/** How close parts sit on a plate: the gap between parts, in mm, for each choice the user can make. */
+export const DENSITY_SPACING_MM = { roomy: 10, normal: 5, tight: 3 } as const
+export type Density = keyof typeof DENSITY_SPACING_MM
+/** Default gap from the plate edge: Bambu Studio's strict upload check wants about 1 mm. */
+export const DEFAULT_EDGE_MARGIN_MM = 1
+
+/** A part counts as small when its footprint's longest side and its height are both at most this. */
+export const SMALL_PART_MM = 60
+/** Small parts keep at least this far from the plate's edges, when the plate has room. */
+export const SMALL_PART_EDGE_MM = 10
+
+/**
+ * How far a part printed with supports needs other parts kept away, per mm of its height. Tree supports spread
+ * out past the part as they rise: Bambu Studio's strict upload check found the 126 mm Top Handle's supports
+ * inside a key 15 mm away, and not 25 mm away (0.2 × 126 = 25.2 mm).
+ */
+export const SUPPORT_SPREAD = 0.2
+const needsSupport = (path: string) => /\(turn on supports\)/i.test(path)
+
 export const materialOf = (path: string): Material => (/\(TPU\)/i.test(path) ? 'TPU' : 'PLA')
 
 export function packPlates(lines: readonly PartLine[], options: PackOptions): PackedPlate[] {
-  const spacing = options.spacingMm ?? 5
-  const margin = options.edgeMarginMm ?? 1
+  const spacing = options.spacingMm ?? DENSITY_SPACING_MM.normal
+  const margin = options.edgeMarginMm ?? DEFAULT_EDGE_MARGIN_MM
   const tightMargin = options.tightEdgeMarginMm ?? 0.25
   const { width: W, depth: D } = options.printer.bed
   // Packing happens inside the plate minus the edge margin; positions are shifted back onto the plate.
   const inner = (m: number) => ({ w: W - 2 * m, d: D - 2 * m })
+  // Margins to try for a part that can't keep the chosen one, roomiest first.
+  const margins = [...new Set([margin, Math.min(margin, DEFAULT_EDGE_MARGIN_MM), Math.min(margin, tightMargin)])]
 
   // One entry per printed part, grouped by what may share a plate.
   const groups = new Map<string, { role: ColourRole | 'mixed'; material: Material; parts: { line: PartLine; part: PartMeasure }[] }>()
@@ -63,11 +97,15 @@ export function packPlates(lines: readonly PartLine[], options: PackOptions): Pa
     groups.set(key, group)
   }
 
-  const plates: Omit<PackedPlate, 'index'>[] = []
+  const plates: Omit<PackedPlate, 'index' | 'edgeMm'>[] = []
   const order = ['body', 'accent', 'secondary', 'pla', 'tpu']
   for (const key of [...groups.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b))) {
     const group = groups.get(key)!
-    const sheets: { packer: MaxRects; items: PlacedItem[]; margin: number }[] = []
+    // `front`: how far forward (packer y, from the back) the large parts placed so far reach, spacing included;
+    // `left`/`right`: how far across. Small parts all aim for the middle of that front edge, so they gather
+    // side by side in front of the large parts rather than queueing one behind another.
+    // A sheet with less than the chosen margin is `solo`: it holds the one part that needed it.
+    const sheets: { packer: MaxRects; items: PlacedItem[]; margin: number; solo: boolean; front: number; left: number; right: number }[] = []
     const diagonal: { line: PartLine; part: PartMeasure; rect: { angleDeg: number; w: number; h: number } }[] = []
     const shapes = group.parts
       .map(({ line, part }) => ({ line, part, rect: minAreaRect(part.outline) }))
@@ -75,10 +113,16 @@ export function packPlates(lines: readonly PartLine[], options: PackOptions): Pa
 
     for (const { line, part, rect } of shapes) {
       const base = { path: line.path, role: line.role, material: group.material }
+      const small = Math.max(rect.w, rect.h, part.size[2]) <= SMALL_PART_MM
+      // A part with supports is packed with room for them on every side (on top of the usual spacing between
+      // parts), when the plate allows; the part sits in the middle of that room.
+      const pad = needsSupport(line.path) ? Math.max(0, SUPPORT_SPREAD * part.size[2] - spacing) : 0
+      const fitsBed = (w: number, h: number) => w <= inner(tightMargin).w && h <= inner(tightMargin).d
       const orientations = [
         { angle: rect.angleDeg, w: rect.w, h: rect.h },
         { angle: rect.angleDeg + 90, w: rect.h, h: rect.w },
-      ].filter((o) => o.w <= inner(tightMargin).w && o.h <= inner(tightMargin).d)
+      ].filter((o) => fitsBed(o.w, o.h))
+        .map((o) => (fitsBed(o.w + 2 * pad, o.h + 2 * pad) ? { ...o, w: o.w + 2 * pad, h: o.h + 2 * pad } : o))
 
       if (orientations.length === 0) {
         // Only fits turned diagonally: laid out separately below, sharing plates where they fit side by side.
@@ -89,47 +133,85 @@ export function packPlates(lines: readonly PartLine[], options: PackOptions): Pa
 
       // Gaps: every rectangle grows by the spacing, and so does the bed, so parts may touch the bed edge.
       let placed: { sheet: (typeof sheets)[number]; at: { x: number; y: number }; o: (typeof orientations)[number] } | undefined
-      for (const sheet of sheets) {
+      // Sheets are packed from the back of the plate (packer y runs from back to front), so large parts, placed
+      // first by best-short-side-fit, gather at the back. Small parts take the free spot nearest the middle of the
+      // front edge of the large parts already placed (or of the plate, before any are), first only where they stay clear of the plate edges, then anywhere.
+      // Small parts try, in turn: in front of the large parts and clear of the edges; clear of the edges; anywhere.
+      // (A small part beside the tall Top Handle made Bambu Studio report G-code conflicts; in front, it didn't.)
+      type Tier = 'front' | 'clear' | 'any'
+      const findOn = (sheet: (typeof sheets)[number], tier: Tier) => {
+        const { w: sw, d: sd } = inner(sheet.margin)
+        const clear = Math.max(0, SMALL_PART_EDGE_MM - sheet.margin)
         let best: { score: number; at: { x: number; y: number }; o: (typeof orientations)[number] } | undefined
         for (const o of orientations) {
-          const at = sheet.packer.find(o.w + spacing, o.h + spacing)
+          const at = small
+            ? sheet.packer.findNear(o.w + spacing, o.h + spacing, { x: (sheet.left < sheet.right ? (sheet.left + sheet.right) / 2 : sw / 2) - o.w / 2, y: sheet.front },
+              tier === 'any' ? undefined : { x0: clear, y0: Math.max(clear, tier === 'front' ? sheet.front : 0), x1: sw - clear - o.w, y1: sd - clear - o.h })
+            : sheet.packer.find(o.w + spacing, o.h + spacing)
           if (at && (!best || at.score < best.score)) best = { score: at.score, at, o }
         }
-        if (best) { placed = { sheet, at: best.at, o: best.o }; break }
+        return best
+      }
+      // A small part looks on every plate for a spot in a better tier before settling for a worse one.
+      for (const tier of small ? (['front', 'clear', 'any'] as const) : (['any'] as const)) {
+        for (const sheet of sheets) {
+          if (sheet.solo) continue
+          const best = findOn(sheet, tier)
+          if (best) { placed = { sheet, at: best.at, o: best.o }; break }
+        }
+        if (placed) break
       }
       if (!placed) {
-        // A new plate keeps the normal margin, unless this part only lies straight with the tight one.
-        const m = orientations.some((o) => o.w <= inner(margin).w && o.h <= inner(margin).d) ? margin : tightMargin
-        const sheet = { packer: new MaxRects(inner(m).w + spacing, inner(m).d + spacing), items: [] as PlacedItem[], margin: m }
+        // A new plate keeps the chosen margin, or the most this part allows (and then it holds only this part).
+        const m = margins.find((mm) => orientations.some((o) => o.w <= inner(mm).w && o.h <= inner(mm).d)) ?? tightMargin
+        const sheet = { packer: new MaxRects(inner(m).w + spacing, inner(m).d + spacing), items: [] as PlacedItem[], margin: m, solo: m < margin, front: 0, left: Infinity, right: -Infinity }
         // Reserved areas are blocked out, grown so parts keep the spacing from them on every side.
         for (const zone of options.printer.excluded ?? []) {
           const xs = zone.map(([x]) => x)
           const ys = zone.map(([, y]) => y)
-          const x0 = Math.min(...xs) - m, y0 = Math.min(...ys) - m
-          sheet.packer.place({ x: x0, y: y0, w: Math.max(...xs) - x0 + spacing, h: Math.max(...ys) - y0 + spacing })
+          const x0 = Math.min(...xs) - m
+          // Packer y runs from the back: flip the zone's y range.
+          const y0 = inner(m).d - (Math.max(...ys) - m)
+          sheet.packer.place({ x: x0, y: y0, w: Math.max(...xs) - m - x0 + spacing, h: Math.max(...ys) - Math.min(...ys) + spacing })
         }
         sheets.push(sheet)
-        const o = orientations[0]
-        placed = { sheet, at: sheet.packer.find(o.w + spacing, o.h + spacing)!, o }
+        const best = findOn(sheet, 'front') ?? findOn(sheet, 'clear') ?? findOn(sheet, 'any')
+        if (!best) throw new Error(`${line.path} does not fit an empty ${options.printer.name} plate`)
+        placed = { sheet, at: best.at, o: best.o }
       }
       const { sheet, at, o } = placed
       sheet.packer.place({ x: at.x, y: at.y, w: o.w + spacing, h: o.h + spacing })
+      if (!small) {
+        sheet.front = Math.max(sheet.front, at.y + o.h + spacing)
+        sheet.left = Math.min(sheet.left, at.x)
+        sheet.right = Math.max(sheet.right, at.x + o.w)
+      }
       sheet.items.push({
         ...base,
         angleDeg: normalise(o.angle),
         pivot: boxCentre(part.outline, o.angle),
         x: sheet.margin + at.x + o.w / 2,
-        y: sheet.margin + at.y + o.h / 2,
+        y: sheet.margin + inner(sheet.margin).d - at.y - o.h / 2,
       })
     }
     for (const sheet of sheets) {
       plates.push({ role: group.role, material: group.material, items: centred(sheet.items, options, sheet.margin, spacing) })
     }
-    for (const items of diagonalPlates(diagonal, group.material, options, margin, spacing)) {
+    for (const items of diagonalPlates(diagonal, group.material, options, margins, spacing)) {
       plates.push({ role: group.role, material: group.material, items })
     }
   }
-  return plates.map((p, i) => ({ ...p, index: i + 1 }))
+  return plates.map((p, i) => ({ ...p, index: i + 1, edgeMm: edgeGap(p.items, options) }))
+}
+
+/** Smallest distance from any part on a plate to the plate's edge. */
+function edgeGap(items: readonly PlacedItem[], options: PackOptions): number {
+  const { width: W, depth: D } = options.printer.bed
+  let gap = Infinity
+  for (const item of items) {
+    for (const [x, y] of footprintOnPlate(item, options.catalog.get(item.path))) gap = Math.min(gap, x, y, W - x, D - y)
+  }
+  return Math.max(0, gap)
 }
 
 /**
@@ -140,17 +222,17 @@ export function packPlates(lines: readonly PartLine[], options: PackOptions): Pa
  */
 function diagonalPlates(
   parts: { line: PartLine; part: PartMeasure; rect: { angleDeg: number; w: number; h: number } }[],
-  material: Material, options: PackOptions, margin: number, spacing: number,
+  material: Material, options: PackOptions, margins: readonly number[], spacing: number,
 ): PlacedItem[][] {
   const { width: W, depth: D } = options.printer.bed
-  const iw = W - 2 * margin
-  const id = D - 2 * margin
   const zones = (options.printer.excluded ?? []).map((z) => box(z as Point[]))
   const sorted = [...parts].sort((a, b) => b.rect.w - a.rect.w)
   const plates: PlacedItem[][] = []
 
-  /** The angle at which strips of these lengths and thicknesses, stacked, fit the plate; undefined if none. */
-  const layout = (group: typeof parts) => {
+  /** The strips laid out at an angle where, stacked, they fit the plate within this margin; undefined if none. */
+  const layout = (group: typeof parts, margin: number) => layoutWithin(group, W - 2 * margin, D - 2 * margin)
+
+  const layoutWithin = (group: typeof parts, iw: number, id: number) => {
     const length = Math.max(...group.map((g) => g.rect.w))
     const thickness = group.reduce((t, g) => t + g.rect.h, 0) + spacing * (group.length - 1)
     let best: { phi: number; slack: number } | undefined
@@ -189,8 +271,11 @@ function diagonalPlates(
 
   while (sorted.length) {
     const group = [sorted.shift()!]
-    let placed = layout(group)
+    let placed = layout(group, margins[0])
     if (!placed) {
+      // Can't keep the chosen margin even alone: a plate of its own, with the most margin it can get.
+      const alone = margins.slice(1).map((m) => layout(group, m)).find(Boolean)
+      if (alone) { plates.push(alone); continue }
       // Fits only by its exact outline: alone, at the angle that leaves the most room.
       const { line, part } = group[0]
       const fit = checkFit(part, options.printer)
@@ -198,12 +283,18 @@ function diagonalPlates(
       continue
     }
     for (let i = 0; i < sorted.length;) {
-      const tried = layout([...group, sorted[i]])
+      const tried = layout([...group, sorted[i]], margins[0])
       if (tried) { group.push(sorted.splice(i, 1)[0]); placed = tried } else i++
     }
     plates.push(placed)
   }
   return plates
+}
+
+/** Whether a placed part counts as small: its footprint and height are all within SMALL_PART_MM. */
+function isSmall(part: PartMeasure, item: PlacedItem): boolean {
+  const b = box(footprintOnPlate(item, part))
+  return Math.max(b.x1 - b.x0, b.y1 - b.y0, part.size[2]) <= SMALL_PART_MM + 1e-6
 }
 
 /**
@@ -218,8 +309,14 @@ function centred(items: PlacedItem[], options: PackOptions, margin: number, spac
   const dx = W / 2 - (all.x0 + all.x1) / 2
   const dy = D / 2 - (all.y0 + all.y1) / 2
   const zones = (options.printer.excluded ?? []).map((z) => box(z as Point[]))
-  const fits = (sx: number, sy: number) => boxes.every((b) =>
-    b.x0 + sx >= margin - 1e-6 && b.y0 + sy >= margin - 1e-6 && b.x1 + sx <= W - margin + 1e-6 && b.y1 + sy <= D - margin + 1e-6 &&
+  // Small parts keep their extra distance from the edges, if they had it before the move.
+  const edgeOf = boxes.map((b, i) => {
+    const small = isSmall(options.catalog.get(items[i].path), items[i])
+    const had = Math.min(b.x0, b.y0, W - b.x1, D - b.y1)
+    return small ? Math.max(margin, Math.min(SMALL_PART_EDGE_MM, had)) : margin
+  })
+  const fits = (sx: number, sy: number) => boxes.every((b, i) =>
+    b.x0 + sx >= edgeOf[i] - 1e-6 && b.y0 + sy >= edgeOf[i] - 1e-6 && b.x1 + sx <= W - edgeOf[i] + 1e-6 && b.y1 + sy <= D - edgeOf[i] + 1e-6 &&
     zones.every((z) => b.x1 + sx + spacing <= z.x0 || b.x0 + sx >= z.x1 + spacing || b.y1 + sy + spacing <= z.y0 || b.y0 + sy >= z.y1 + spacing))
   // As close to the middle as the plate allows: the full move if it fits, otherwise the largest part of it
   // (a reserved strip can block going all the way), on both axes or on one.
@@ -293,7 +390,7 @@ function longSideAlongX(r: { angleDeg: number; w: number; h: number }) {
 
 interface Rect { x: number; y: number; w: number; h: number }
 
-/** MaxRects bin packing, best-short-side-fit. */
+/** MaxRects bin packing: free space kept as maximal rectangles. */
 class MaxRects {
   private free: Rect[]
   constructor(width: number, height: number) {
@@ -307,6 +404,26 @@ class MaxRects {
         const score = Math.min(f.w - w, f.h - h)
         if (!best || score < best.score) best = { x: f.x, y: f.y, score }
       }
+    }
+    return best
+  }
+
+  /**
+   * The free spot for a w × h rectangle whose corner is nearest `want`, optionally only where the corner stays
+   * within `bounds`. Within each free rectangle the corner is pulled as close to `want` as it can go.
+   */
+  findNear(
+    w: number, h: number, want: { x: number; y: number }, bounds?: { x0: number; y0: number; x1: number; y1: number },
+  ): { x: number; y: number; score: number } | undefined {
+    let best: { x: number; y: number; score: number } | undefined
+    for (const f of this.free) {
+      let x0 = f.x, x1 = f.x + f.w - w, y0 = f.y, y1 = f.y + f.h - h
+      if (bounds) { x0 = Math.max(x0, bounds.x0); x1 = Math.min(x1, bounds.x1); y0 = Math.max(y0, bounds.y0); y1 = Math.min(y1, bounds.y1) }
+      if (x1 < x0 - 1e-9 || y1 < y0 - 1e-9) continue
+      const x = Math.min(Math.max(want.x, x0), Math.max(x0, x1))
+      const y = Math.min(Math.max(want.y, y0), Math.max(y0, y1))
+      const score = Math.hypot(x - want.x, y - want.y)
+      if (!best || score < best.score) best = { x, y, score }
     }
     return best
   }

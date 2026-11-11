@@ -3,6 +3,7 @@
  * If the browser refuses storage (private windows, blocked site data), layouts live in memory for the
  * session and `persistent` says so, so the page can tell the person.
  */
+import { DEFAULT_EDGE_MARGIN_MM } from '../engine/plates'
 import { DEFAULT_COLOURS, type Colours, type EditorLayout } from './layoutOps'
 
 export type KeyValueStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>
@@ -35,6 +36,8 @@ function upgrade(raw: unknown): EditorLayout | undefined {
   return {
     splitParts: 'auto',
     allowColourMixing: false,
+    plateEdgeMm: DEFAULT_EDGE_MARGIN_MM,
+    plateDensity: 'normal',
     updatedAt: 0,
     ...(data as object),
     colours: upgradedColours,

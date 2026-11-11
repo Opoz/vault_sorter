@@ -7,7 +7,7 @@ import type { Catalog } from '../engine/catalog'
 import type { PrinterBed } from '../engine/fit'
 import type { Tower } from '../engine/model'
 import { partsForTower } from '../engine/parts'
-import { packPlates, type PackedPlate } from '../engine/plates'
+import { DENSITY_SPACING_MM, packPlates, type Density, type PackedPlate } from '../engine/plates'
 import templateIndex from '../data/bambu/index.json'
 import { primeTowerSpot, writeBambuProject } from './bambu3mf'
 import { meshReader, type VaultSource } from './vaultFolder'
@@ -30,6 +30,8 @@ export interface ExportRequest {
   readonly catalog: Catalog
   readonly splitParts: 'auto' | 'whole' | 'split'
   readonly allowColourMixing: boolean
+  readonly plateEdgeMm: number
+  readonly plateDensity: Density
   readonly colours: { readonly body: string; readonly accent: string; readonly secondary: string }
 }
 
@@ -37,7 +39,10 @@ export interface ExportRequest {
 export function platesFor(req: ExportRequest, primeTowerZone?: [number, number][]): PackedPlate[] {
   const lines = partsForTower(req.tower, { catalog: req.catalog, printer: req.printer, splitParts: req.splitParts })
   const excluded = [...(req.printer.excluded ?? []), ...(primeTowerZone ? [primeTowerZone] : [])]
-  return packPlates(lines, { catalog: req.catalog, printer: { ...req.printer, excluded }, allowColourMixing: req.allowColourMixing })
+  return packPlates(lines, {
+    catalog: req.catalog, printer: { ...req.printer, excluded }, allowColourMixing: req.allowColourMixing,
+    edgeMarginMm: req.plateEdgeMm, spacingMm: DENSITY_SPACING_MM[req.plateDensity],
+  })
 }
 
 /** Rough size of the finished Bambu project: about 9.5 bytes per triangle once compressed (checked against real exports). */

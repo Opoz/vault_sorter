@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Point } from './catalog'
 import type { Tower, Unit } from './model'
 import { partsForTower } from './parts'
-import { footprintOnPlate, packPlates, type PackedPlate } from './plates'
+import { footprintOnPlate, packPlates, SMALL_PART_EDGE_MM, SMALL_PART_MM, SUPPORT_SPREAD, type PackedPlate } from './plates'
 import { realCatalog } from './testing'
 
 const H2S = { name: 'Bambu Lab H2S', bed: { width: 340, depth: 320 }, height: 340 }
@@ -25,6 +25,15 @@ const pack = (t: Tower, printer = H2S, allowColourMixing = false) => {
 }
 
 const footprints = (plate: PackedPlate) => plate.items.map((item) => footprintOnPlate(item, realCatalog.get(item.path)))
+
+/** Centre of the box around all of a plate's parts. */
+function centreOf(plate: PackedPlate) {
+  const pts = footprints(plate).flat()
+  return {
+    cx: (Math.min(...pts.map((p) => p[0])) + Math.max(...pts.map((p) => p[0]))) / 2,
+    cy: (Math.min(...pts.map((p) => p[1])) + Math.max(...pts.map((p) => p[1]))) / 2,
+  }
+}
 
 describe('packPlates', () => {
   it('places every part exactly as many times as the parts list asks', () => {
@@ -83,26 +92,23 @@ describe('packPlates', () => {
     expect(modulePlate.items[0].angleDeg % 90).not.toBeCloseTo(0, 0)
   })
 
-  // Like Bambu Studio's own arrange: a plate's parts sit together in the middle, not in a corner.
+  // Like Bambu Studio's own arrange: a plate's parts sit together in the middle, not in a corner. On a full plate
+  // the last few mm can be given up to keep small parts clear of the edges (issue #6).
   it('centres the parts on each plate', () => {
     for (const plate of pack(mTower).plates) {
-      const pts = footprints(plate).flat()
-      const cx = (Math.min(...pts.map((p) => p[0])) + Math.max(...pts.map((p) => p[0]))) / 2
-      const cy = (Math.min(...pts.map((p) => p[1])) + Math.max(...pts.map((p) => p[1]))) / 2
-      expect(cx, `plate ${plate.index}`).toBeCloseTo(H2S.bed.width / 2, 0)
-      expect(cy, `plate ${plate.index}`).toBeCloseTo(H2S.bed.depth / 2, 0)
+      const { cx, cy } = centreOf(plate)
+      expect(Math.abs(cx - H2S.bed.width / 2), `plate ${plate.index}`).toBeLessThan(5)
+      expect(Math.abs(cy - H2S.bed.depth / 2), `plate ${plate.index}`).toBeLessThan(5)
     }
   })
 
   // H2C: a reserved strip at the back (145–251 × 310–326 mm). It can stop parts moving all the way back, but they
-  // should still get as close to the middle as it allows: centred left to right, and no further forward than needed.
+  // should still get as close to the middle as it allows: centred left to right.
   it('centres parts as far as a reserved area allows', () => {
     const strip: Point[] = [[145, 310], [251, 310], [251, 326], [145, 326]]
     const H2C = { name: 'Bambu Lab H2C', bed: { width: 325, depth: 320 }, height: 320, excluded: [strip] }
     for (const plate of pack(mTower, H2C).plates) {
-      const pts = footprints(plate).flat()
-      const cx = (Math.min(...pts.map((p) => p[0])) + Math.max(...pts.map((p) => p[0]))) / 2
-      expect(cx, `plate ${plate.index}`).toBeCloseTo(H2C.bed.width / 2, -1)
+      expect(Math.abs(centreOf(plate).cx - H2C.bed.width / 2), `plate ${plate.index}`).toBeLessThan(5)
     }
   })
 
@@ -150,6 +156,93 @@ describe('packPlates', () => {
       const edge = Math.min(...pts.map(([x, y]) => Math.min(x, y, A2L.bed.width - x, A2L.bed.depth - y)))
       expect(edge, `plate ${plate.index}`).toBeGreaterThanOrEqual(0.99)
       for (const item of plate.items) if (item.path.includes('L1F')) expect(item.angleDeg % 90).not.toBeCloseTo(0, 0)
+    }
+  })
+
+  // Issue #5: the margin from the plate edge and the gap between parts are the user's choice.
+  it('keeps the edge margin and the spacing it is given', () => {
+    const lines = partsForTower(mTower, { catalog: realCatalog, printer: H2S })
+    const plates = packPlates(lines, { catalog: realCatalog, printer: H2S, allowColourMixing: false, spacingMm: 12, edgeMarginMm: 8 })
+    for (const plate of plates) {
+      const outlines = footprints(plate)
+      const edge = Math.min(...outlines.flat().map(([x, y]) => Math.min(x, y, H2S.bed.width - x, H2S.bed.depth - y)))
+      expect(edge, `plate ${plate.index}`).toBeGreaterThanOrEqual(8 - 0.01)
+      for (let i = 0; i < outlines.length; i++) for (let j = i + 1; j < outlines.length; j++) {
+        expect(distance(outlines[i], outlines[j])).toBeGreaterThanOrEqual(12 - 0.01)
+      }
+    }
+  })
+
+  // The edge margin decides which parts may share a plate. A part that can't keep it even on a plate of its own
+  // (L parts lying diagonally on a 325 mm bed, with 20 mm asked for) is still printed, alone, with as much margin
+  // as it can get; the plate reports the margin it actually has, so the user can be told.
+  it('shares plates only within the chosen edge margin, giving a part that cannot keep it a plate of its own', () => {
+    const H2C = { name: 'Bambu Lab H2C', bed: { width: 325, depth: 320 }, height: 320 }
+    const l = tower({ width: 'L', depth: 3, roof: 'under table mount', bottom: 'none', backbone: 'none', rows: [{ height: '1F', units: [drawer('L')] }] })
+    const lines = partsForTower(l, { catalog: realCatalog, printer: H2C })
+    const plates = packPlates(lines, { catalog: realCatalog, printer: H2C, allowColourMixing: false, edgeMarginMm: 20 })
+
+    for (const plate of plates) {
+      const pts = footprints(plate).flat()
+      const edge = Math.min(...pts.map(([x, y]) => Math.min(x, y, H2C.bed.width - x, H2C.bed.depth - y)))
+      expect(plate.edgeMm, `plate ${plate.index}`).toBeCloseTo(edge, 1)
+      if (edge < 20 - 0.01) {
+        expect(plate.items, `plate ${plate.index} has less than 20 mm, so nothing shares it`).toHaveLength(1)
+        expect(edge, `plate ${plate.index}`).toBeGreaterThanOrEqual(0.99)
+      }
+    }
+    expect(plates.some((p) => p.edgeMm < 20)).toBe(true)
+  })
+
+  // Issue #6: small parts (keys, caps, springs, stoppers) fail most behind other parts and near the edges, where
+  // the first layer is hardest to watch and adhesion is weakest. They go in front of the other parts (not at the
+  // front edge of the plate: the group is still centred), clear of the edges.
+  // Tall parts with a small footprint (the 126 mm Top Handle) count as large: placed among small parts, it made
+  // Bambu Studio's upload check report G-code conflicts.
+  describe('small parts', () => {
+    const isSmall = (plate: PackedPlate, i: number) => {
+      const pts = footprints(plate)[i]
+      const w = Math.max(...pts.map((p) => p[0])) - Math.min(...pts.map((p) => p[0]))
+      const d = Math.max(...pts.map((p) => p[1])) - Math.min(...pts.map((p) => p[1]))
+      return Math.max(w, d, realCatalog.get(plate.items[i].path).size[2]) <= SMALL_PART_MM
+    }
+
+    it('go in front of the larger parts on their plate', () => {
+      let compared = 0
+      for (const plate of pack(mTower).plates) {
+        const small = plate.items.filter((_, i) => isSmall(plate, i)).map((it) => it.y)
+        const large = plate.items.filter((_, i) => !isSmall(plate, i)).map((it) => it.y)
+        if (!small.length || !large.length) continue
+        compared++
+        const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length
+        expect(mean(small), `plate ${plate.index}`).toBeLessThan(mean(large))
+      }
+      expect(compared).toBeGreaterThan(0)
+    })
+
+    it('keep clear of the plate edges', () => {
+      for (const plate of pack(mTower).plates) {
+        footprints(plate).forEach((outline, i) => {
+          if (!isSmall(plate, i)) return
+          const edge = Math.min(...outline.map(([x, y]) => Math.min(x, y, H2S.bed.width - x, H2S.bed.depth - y)))
+          expect(edge, plate.items[i].path).toBeGreaterThanOrEqual(SMALL_PART_EDGE_MM - 0.01)
+        })
+      }
+    })
+  })
+
+  // Tree supports spread out past a tall part. Bambu Studio's strict upload check found the Top Handle's (126 mm)
+  // supports inside a key 15 mm away, but not 25 mm away; so supported parts keep a gap that grows with height.
+  it('keeps other parts clear of the supports spreading out from a tall part', () => {
+    for (const plate of pack(mTower).plates) {
+      const outlines = footprints(plate)
+      plate.items.forEach((item, i) => {
+        if (!/turn on supports/i.test(item.path)) return
+        const needed = SUPPORT_SPREAD * realCatalog.get(item.path).size[2]
+        outlines.forEach((other, j) => {
+          if (j !== i) expect(distance(outlines[i], other), `${item.path} vs ${plate.items[j].path}`).toBeGreaterThanOrEqual(Math.max(needed, SPACING) - 0.01)
+        })
+      })
     }
   })
 
