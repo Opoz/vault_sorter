@@ -65,7 +65,7 @@ Whether a Part, in the orientation its file is stored in, can be turned on the b
 _Avoid_: Clearance (a separate margin we deliberately don't apply)
 
 **Colour role**:
-Which colour a part is printed in, chosen once per Layout. **Body** covers Modules, Boxes, Roofs, Facades and Labels; **Accent** covers the small dark parts: locks, sustainer latches and handles.
+Which colour a part is printed in, chosen once per Layout, shown in this order. **Primary** (called `body` in code) covers Modules, Boxes, Roofs, Facades, Labels, Key Caps, drawer Latches and Bases; **Secondary** covers keys, sustainer lock outer parts and handles; **Accent** covers the runners (slides, guides and stoppers).
 _Avoid_: Theme, palette, filament (a filament is the material loaded for a Colour role)
 
 ## Drawer parts

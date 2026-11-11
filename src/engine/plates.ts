@@ -64,7 +64,7 @@ export function packPlates(lines: readonly PartLine[], options: PackOptions): Pa
   }
 
   const plates: Omit<PackedPlate, 'index'>[] = []
-  const order = ['body', 'accent', 'pla', 'tpu']
+  const order = ['body', 'accent', 'secondary', 'pla', 'tpu']
   for (const key of [...groups.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b))) {
     const group = groups.get(key)!
     const sheets: { packer: MaxRects; items: PlacedItem[]; margin: number }[] = []

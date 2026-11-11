@@ -28,9 +28,11 @@ export interface EditorTower {
   readonly backbone: Tower['backbone']
 }
 
+/** One colour per Colour role. */
 export interface Colours {
   readonly body: string
   readonly accent: string
+  readonly secondary: string
 }
 
 export interface EditorLayout {
@@ -60,8 +62,9 @@ const newId = () => crypto.randomUUID()
 const done = (layout: EditorLayout): OpResult => ({ ok: true, layout: { ...layout, updatedAt: Date.now() } })
 const refuse = (reason: string): OpResult => ({ ok: false, reason })
 
-// Matches USSA's renders: light grey modules and facades, dark locks, latches and handles.
-export const DEFAULT_COLOURS: Colours = { body: '#D3D5D2', accent: '#2F3236' }
+// Matches USSA's renders: light grey modules and facades, dark locks, latches and handles. Runners are hidden
+// inside, so their default only needs to tell them apart.
+export const DEFAULT_COLOURS: Colours = { body: '#D3D5D2', accent: '#8A8F93', secondary: '#2F3236' }
 
 export function newLayout(name: string): EditorLayout {
   return {
@@ -147,6 +150,20 @@ export function removeUnit(layout: EditorLayout, towerId: string, unitId: string
   })
 }
 
+/**
+ * Copy a placed Unit, with its settings: beside it when its Row has room, otherwise in a new Row directly above.
+ */
+export function duplicateUnit(layout: EditorLayout, towerId: string, unitId: string): OpResult {
+  const tower = layout.towers.find((t) => t.id === towerId)
+  const index = tower?.rows.findIndex((r) => r.units.some((u) => u.id === unitId)) ?? -1
+  if (!tower || index < 0) return refuse('That unit no longer exists')
+  const row = tower.rows[index]
+  const unit = row.units.find((u) => u.id === unitId)!
+  const copy = { ...unit, id: newId() }
+  const beside = placeExisting(layout, towerId, { kind: 'beside', rowId: row.id }, copy, row.height)
+  return beside.ok ? beside : placeExisting(layout, towerId, { kind: 'newRow', index: index + 1 }, copy, row.height)
+}
+
 /** Move a placed Unit, within its Tower or into another one. */
 export function moveUnit(
   layout: EditorLayout, fromTowerId: string, unitId: string, toTowerId: string, target: DropTarget,
@@ -215,6 +232,13 @@ export function updateLayout(
   layout: EditorLayout, patch: Partial<Pick<EditorLayout, 'name' | 'splitParts' | 'allowColourMixing' | 'colours'>>,
 ): OpResult {
   return done({ ...layout, ...patch })
+}
+
+/** The Width a Row still needs to fill its Tower, or null when it is full or can't be filled. */
+export function missingWidth(towerWidth: Width, row: EditorRow): Width | null {
+  const widths = row.units.map((u) => u.width)
+  if (isFull(towerWidth, widths)) return null
+  return ROW_FILLS[towerWidth].find((f) => f.length > widths.length && startsWith(f, widths))?.[widths.length] ?? null
 }
 
 /** Rows that aren't complete yet, e.g. a single S in an L tower. Not errors: the tower is still being built. */

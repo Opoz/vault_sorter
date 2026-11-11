@@ -3,7 +3,7 @@
  * If the browser refuses storage (private windows, blocked site data), layouts live in memory for the
  * session and `persistent` says so, so the page can tell the person.
  */
-import { DEFAULT_COLOURS, type EditorLayout } from './layoutOps'
+import { DEFAULT_COLOURS, type Colours, type EditorLayout } from './layoutOps'
 
 export type KeyValueStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'>
 
@@ -27,12 +27,17 @@ function upgrade(raw: unknown): EditorLayout | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const data = raw as Record<string, unknown>
   if (typeof data.id !== 'string' || typeof data.name !== 'string' || !Array.isArray(data.towers)) return undefined
+  // Before the secondary colour existed, "accent" was the colour of keys, locks and handles: that is now secondary.
+  const colours = data.colours as Partial<Colours> | undefined
+  const upgradedColours = colours && !colours.secondary
+    ? { ...DEFAULT_COLOURS, body: colours.body ?? DEFAULT_COLOURS.body, secondary: colours.accent ?? DEFAULT_COLOURS.secondary }
+    : colours ?? DEFAULT_COLOURS
   return {
     splitParts: 'auto',
     allowColourMixing: false,
-    colours: DEFAULT_COLOURS,
     updatedAt: 0,
     ...(data as object),
+    colours: upgradedColours,
   } as EditorLayout
 }
 

@@ -22,7 +22,7 @@ export function gramsForPart(volume: number, area: number): number {
 }
 
 export function filamentEstimate(lines: readonly PartLine[], catalog: Catalog): FilamentEstimate {
-  const grams: FilamentEstimate = { body: 0, accent: 0, total: 0 }
+  const grams: FilamentEstimate = { body: 0, accent: 0, secondary: 0, total: 0 }
   for (const line of lines) {
     const part = catalog.get(line.path)
     const g = gramsForPart(part.volume, part.area) * line.qty

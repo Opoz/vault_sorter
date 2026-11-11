@@ -3,7 +3,11 @@ import { checkFit, type PrinterBed } from './fit'
 import type { DrawerUnit, RoofType, SustainerUnit, Tower, Width } from './model'
 import { createResolver, type Resolver } from './resolve'
 
-export type ColourRole = 'body' | 'accent'
+/**
+ * Which filament colour a part prints in: body for the bulk, accent for the runners, secondary for keys,
+ * locks and handles. Chosen by the user's group (issue #3).
+ */
+export type ColourRole = 'body' | 'accent' | 'secondary'
 
 /** Why a line can't be taken purely at face value. Shown to the user with its source. */
 export interface Flag {
@@ -102,7 +106,7 @@ function roofParts(tower: Tower, resolver: Resolver): Want[] {
   const dir = `${DRAWERS}/${w} families/${w}${depth}/roof`
   if (roof !== 'heavyweight') {
     const wants: Want[] = [{ tidyPath: `${dir}/${w}${depth} ${ROOF_FILE[roof]}.stl`, qty: 1, role: 'body' }]
-    if (roof === 'grid') wants.push({ tidyPath: `${UNIVERSAL}/top handle.stl`, qty: 1, role: 'accent' })
+    if (roof === 'grid') wants.push({ tidyPath: `${UNIVERSAL}/top handle.stl`, qty: 1, role: 'secondary' })
     return wants
   }
   const handleFlag: Flag = {
@@ -111,7 +115,7 @@ function roofParts(tower: Tower, resolver: Resolver): Want[] {
     source: 'File tree only',
   }
   const extras: Want[] = [
-    { tidyPath: `${UNIVERSAL}/heavyweight roof handle.stl`, qty: 1, role: 'accent', flags: [handleFlag] },
+    { tidyPath: `${UNIVERSAL}/heavyweight roof handle.stl`, qty: 1, role: 'secondary', flags: [handleFlag] },
     { tidyPath: `${UNIVERSAL}/heavyweight roof insert.stl`, qty: 1, role: 'body', flags: [handleFlag] },
   ]
   const cut = `${dir}/${w}${depth} heavyweight roof cut.stl`
@@ -252,7 +256,7 @@ function sustainerParts(unit: SustainerUnit, depth: number, height: string, ctx:
     },
     { tidyPath: `${SUSTAINER_UNIVERSAL}/locks/lock holder.stl`, qty: 2, role: 'body', flags: [fromPicture] },
     { tidyPath: `${SUSTAINER_UNIVERSAL}/locks/lock inner part.stl`, qty: 2, role: 'body', flags: [fromPicture] },
-    { tidyPath: `${SUSTAINER_UNIVERSAL}/locks/${lockOuter}.stl`, qty: 2, role: 'accent', flags: [fromPicture] },
+    { tidyPath: `${SUSTAINER_UNIVERSAL}/locks/${lockOuter}.stl`, qty: 2, role: 'secondary', flags: [fromPicture] },
     {
       tidyPath: `${SUSTAINER_UNIVERSAL}/locks/1 set of pins for 1 lock.stl`, qty: 2, role: 'body',
       flags: [fromPicture],
@@ -291,11 +295,11 @@ function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: 
     },
     ...(unit.key === 'hidden'
       ? [
-          { tidyPath: `${UNIVERSAL}/hidden key.stl`, qty: 1, role: 'accent' as const },
+          { tidyPath: `${UNIVERSAL}/hidden key.stl`, qty: 1, role: 'secondary' as const },
           { tidyPath: `${UNIVERSAL}/hidden key part 2.stl`, qty: 1, role: 'body' as const },
         ]
       : [
-          { tidyPath: `${UNIVERSAL}/key.stl`, qty: 1, role: 'accent' as const },
+          { tidyPath: `${UNIVERSAL}/key.stl`, qty: 1, role: 'secondary' as const },
           { tidyPath: `${UNIVERSAL}/key cap.stl`, qty: 1, role: 'body' as const },
         ]),
     {
@@ -312,15 +316,15 @@ function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: 
       tidyPath: xl
         ? `${UNIVERSAL}/runners/xl runners/x${depth} runner slide xl.stl`
         : `${UNIVERSAL}/runners/x${depth} runner slide.stl`,
-      qty: 2, role: 'body',
+      qty: 2, role: 'accent',
     },
     {
       tidyPath: xl
         ? `${UNIVERSAL}/runners/xl runners/x${depth} runner guide xl.stl`
         : `${UNIVERSAL}/runners/x${depth} runner guide.stl`,
-      qty: 2, role: 'body',
+      qty: 2, role: 'accent',
     },
-    { tidyPath: `${UNIVERSAL}/runners/runner stopper.stl`, qty: 2, role: 'body' },
+    { tidyPath: `${UNIVERSAL}/runners/runner stopper.stl`, qty: 2, role: 'accent' },
     { tidyPath: `${UNIVERSAL}/latch.stl`, qty: 1, role: 'body' },
   ]
 

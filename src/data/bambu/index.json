@@ -5,6 +5,7 @@
     "filaments": [
       "Bambu PLA Basic @BBL A2L 0.4 nozzle",
       "Bambu PLA Basic @BBL A2L 0.4 nozzle",
+      "Bambu PLA Basic @BBL A2L 0.4 nozzle",
       "Bambu TPU 95A HF @BBL A2L"
     ],
     "bambuStudio": "02.09.01.70"
@@ -13,6 +14,7 @@
     "printer": "Bambu Lab H2C 0.4 nozzle",
     "process": "0.20mm Standard @BBL H2C",
     "filaments": [
+      "Bambu PLA Basic @BBL H2C",
       "Bambu PLA Basic @BBL H2C",
       "Bambu PLA Basic @BBL H2C",
       "Bambu TPU 95A @BBL H2C 0.4 nozzle"
@@ -25,6 +27,7 @@
     "filaments": [
       "Bambu PLA Basic @BBL H2D",
       "Bambu PLA Basic @BBL H2D",
+      "Bambu PLA Basic @BBL H2D",
       "Bambu TPU 95A @BBL H2D"
     ],
     "bambuStudio": "02.09.01.70"
@@ -33,6 +36,7 @@
     "printer": "Bambu Lab H2S 0.4 nozzle",
     "process": "0.20mm Standard @BBL H2S",
     "filaments": [
+      "Bambu PLA Basic @BBL H2S",
       "Bambu PLA Basic @BBL H2S",
       "Bambu PLA Basic @BBL H2S",
       "Bambu TPU 95A @BBL H2S"
@@ -45,6 +49,7 @@
     "filaments": [
       "Bambu PLA Basic @BBL H3C",
       "Bambu PLA Basic @BBL H3C",
+      "Bambu PLA Basic @BBL H3C",
       "Bambu TPU 95A HF @BBL H3C"
     ],
     "bambuStudio": "02.09.01.70"
@@ -53,6 +58,7 @@
     "printer": "Bambu Lab P2S 0.4 nozzle",
     "process": "0.20mm Standard @BBL P2S",
     "filaments": [
+      "Bambu PLA Basic @BBL P2S",
       "Bambu PLA Basic @BBL P2S",
       "Bambu PLA Basic @BBL P2S",
       "Bambu TPU 95A HF @BBL P2S"
@@ -65,6 +71,7 @@
     "filaments": [
       "Bambu PLA Basic @BBL X1C",
       "Bambu PLA Basic @BBL X1C",
+      "Bambu PLA Basic @BBL X1C",
       "Bambu TPU 95A HF @BBL X1C"
     ],
     "bambuStudio": "02.09.01.70"
@@ -73,6 +80,7 @@
     "printer": "Bambu Lab X2D 0.4 nozzle",
     "process": "0.20mm Standard @BBL X2D",
     "filaments": [
+      "Bambu PLA Basic @BBL X2D 0.4 nozzle",
       "Bambu PLA Basic @BBL X2D 0.4 nozzle",
       "Bambu PLA Basic @BBL X2D 0.4 nozzle",
       "Bambu TPU 95A HF @BBL X2D 0.4 nozzle"

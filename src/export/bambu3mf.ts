@@ -17,7 +17,7 @@ export interface BambuProjectInput {
   readonly printer: PrinterBed
   /** Bambu Studio's full settings for the printer, with slots PLA (Body), PLA (Accent), TPU. */
   readonly settings: Record<string, unknown>
-  readonly colours: { readonly body: string; readonly accent: string }
+  readonly colours: { readonly body: string; readonly accent: string; readonly secondary: string }
   readonly tpuColour?: string
   /** Reads a part's mesh from the user's Vault folder. */
   readonly meshFor: (path: string) => Promise<Mesh>
@@ -126,8 +126,9 @@ function plateSize(settings: Record<string, unknown>): { width: number; depth: n
   return { width: Math.max(...xs) - Math.min(...xs), depth: Math.max(...ys) - Math.min(...ys) }
 }
 
-/** Body parts print from slot 1, Accent from slot 2, TPU from slot 3. */
-const slotOf = (item: PlacedItem) => (item.material === 'TPU' ? 3 : item.role === 'accent' ? 2 : 1)
+/** Filament slots: 1 Primary (body), 2 Secondary, 3 Accent (all PLA), 4 TPU. */
+const SLOT = { body: 1, secondary: 2, accent: 3 } as const
+const slotOf = (item: PlacedItem) => (item.material === 'TPU' ? 4 : SLOT[item.role])
 const needsSupport = (path: string) => /\(turn on supports\)/i.test(path)
 const fileName = (path: string) => path.split('/').pop()!
 
@@ -157,14 +158,14 @@ ${objects.filter((o) => o.plate === p).map((o) => `    <model_instance>
 
 function plateName(plate: PackedPlate): string {
   if (plate.material === 'TPU') return `Plate ${plate.index} - TPU`
-  return `Plate ${plate.index} - ${plate.role === 'mixed' ? 'mixed colours' : plate.role === 'body' ? 'body colour' : 'accent colour'}`
+  return `Plate ${plate.index} - ${plate.role === 'mixed' ? 'mixed colours' : `${plate.role === 'body' ? 'primary' : plate.role} colour`}`
 }
 
 /** Bambu Studio refuses any name containing these characters, with an error pop-up per name. */
 const safeName = (s: string) => s.replace(/[<>:/\\|?*"]+/g, '-')
 
 function projectSettings(input: BambuProjectInput): Record<string, unknown> {
-  const colours = [input.colours.body, input.colours.accent, input.tpuColour ?? '#1A1A1A']
+  const colours = [input.colours.body, input.colours.secondary, input.colours.accent, input.tpuColour ?? '#1A1A1A']
   const settings: Record<string, unknown> = { ...input.settings, filament_colour: colours, filament_multi_colour: colours }
   // A wipe tower is only built where a plate changes filament. When none does, switch it off: left on, it
   // can collide with parts. When colours mix, every plate keeps it at the spot the packer kept free for it.

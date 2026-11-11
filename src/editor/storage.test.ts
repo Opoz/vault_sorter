@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { newLayout } from './layoutOps'
+import { DEFAULT_COLOURS, newLayout } from './layoutOps'
 import { createLayoutStore, type KeyValueStorage } from './storage'
 
 function memoryStorage(seed: Record<string, string> = {}): KeyValueStorage & { data: Record<string, string> } {
@@ -85,6 +85,16 @@ describe('layout storage', () => {
     expect(loaded.name).toBe('From before colours')
     expect(loaded.colours).toBeDefined()
     expect(loaded.allowColourMixing).toBe(false)
+  })
+
+  // Layouts saved before the secondary colour existed used "accent" for keys, locks and handles.
+  it("moves an older layout's accent colour to secondary, where those parts now are", () => {
+    const old = { ...newLayout('Two colours'), id: 'two', colours: { body: '#111111', accent: '#222222' } }
+    const storage = memoryStorage({ 'vault-planner:layout:two': JSON.stringify({ schema: 1, layout: old }) })
+
+    const loaded = createLayoutStore(storage).load('two')!
+
+    expect(loaded.colours).toEqual({ body: '#111111', accent: DEFAULT_COLOURS.accent, secondary: '#222222' })
   })
 
   it('keeps working in memory when the browser refuses storage, and says so', () => {

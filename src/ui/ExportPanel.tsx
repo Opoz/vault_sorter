@@ -149,6 +149,13 @@ export function ExportPanel({ editor, tower, towerName }: { editor: Editor; towe
         </button>
       </div>
 
+      {!busy && (folder.kind !== 'ready' || !plates) && (
+        <p className="small muted">
+          {folder.kind !== 'ready'
+            ? 'Saving is available once the Vault folder is chosen: the parts are read from it.'
+            : "Saving isn't available: some of this tower's parts couldn't be laid out on plates."}
+        </p>
+      )}
       {progress && (
         <div className="progress" role="status">
           <span>{progress.what}: part {progress.done} of {progress.total}</span>

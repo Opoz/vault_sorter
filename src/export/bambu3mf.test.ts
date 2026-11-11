@@ -12,6 +12,7 @@ const BOXES: Record<string, [number, number, number]> = {
   'A/Box.stl': [180, 140, 40],
   'A/Key (Turn On Supports).stl': [30, 20, 15],
   'A/Facade.stl': [160, 50, 8],
+  'A/Runner.stl': [150, 20, 10],
   'A/Tyre (TPU).stl': [160, 160, 40],
 }
 const part = (path: string): PartMeasure => {
@@ -37,7 +38,8 @@ const settings = { printer_settings_id: 'Bambu Lab H2S 0.4 nozzle', filament_col
 const lines: PartLine[] = [
   { path: 'A/Module.stl', qty: 2, role: 'body', source: 't', flags: [] },
   { path: 'A/Box.stl', qty: 2, role: 'body', source: 't', flags: [] },
-  { path: 'A/Key (Turn On Supports).stl', qty: 3, role: 'accent', source: 't', flags: [] },
+  { path: 'A/Key (Turn On Supports).stl', qty: 3, role: 'secondary', source: 't', flags: [] },
+  { path: 'A/Runner.stl', qty: 2, role: 'accent', source: 't', flags: [] },
   { path: 'A/Facade.stl', qty: 2, role: 'body', source: 't', flags: [] },
   { path: 'A/Tyre (TPU).stl', qty: 2, role: 'body', source: 't', flags: [] },
 ]
@@ -46,7 +48,7 @@ async function exportProject() {
   const plates = packPlates(lines, { catalog, printer: H2S, allowColourMixing: false })
   const chunks: Uint8Array[] = []
   await writeBambuProject(
-    { plates, printer: H2S, settings, colours: { body: '#D3D5D2', accent: '#2F3236' }, meshFor: async (path) => box(path) },
+    { plates, printer: H2S, settings, colours: { body: '#D3D5D2', accent: '#8A8F93', secondary: '#2F3236' }, meshFor: async (path) => box(path) },
     async (chunk) => { chunks.push(chunk) },
   )
   const zip = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0))
@@ -88,17 +90,17 @@ describe('writeBambuProject', () => {
       expect(names).toEqual(plate.items.map((it) => it.path.split('/').pop()).sort())
     })
     for (const o of objects) {
-      expect(o.slot, o.name).toBe(o.name.includes('(TPU)') ? '3' : o.name.startsWith('Key') ? '2' : '1')
+      expect(o.slot, o.name).toBe(o.name.includes('(TPU)') ? '4' : o.name.startsWith('Key') ? '2' : o.name.startsWith('Runner') ? '3' : '1')
       expect(o.support, o.name).toBe(o.name.includes('(Turn On Supports)'))
     }
   })
 
-  it('fills in the layout colours for the body and accent slots', async () => {
+  it('fills in the layout colours for the primary, secondary and accent slots', async () => {
     const { text } = await exportProject()
     const s = JSON.parse(text('Metadata/project_settings.config'))
 
-    expect(s.filament_colour.slice(0, 2)).toEqual(['#D3D5D2', '#2F3236'])
-    expect(s.filament_multi_colour.slice(0, 2)).toEqual(['#D3D5D2', '#2F3236'])
+    expect(s.filament_colour.slice(0, 3)).toEqual(['#D3D5D2', '#2F3236', '#8A8F93'])
+    expect(s.filament_multi_colour.slice(0, 3)).toEqual(['#D3D5D2', '#2F3236', '#8A8F93'])
   })
 
   // Bambu Studio refuses names containing <>:/\|?*" with an error pop-up per name.

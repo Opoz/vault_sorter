@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { addTower, newLayout, type EditorLayout, type OpResult } from '../editor/layoutOps'
+import { addTower, duplicateUnit as copyUnit, newLayout, type EditorLayout, type OpResult } from '../editor/layoutOps'
 import { createLayoutStore, type KeyValueStorage } from '../editor/storage'
 import { DEFAULT_PRINTER_ID, findPrinter, type Printer } from './data'
 
@@ -91,6 +91,13 @@ export function useEditor() {
       store.save({ ...fresh, name: `Layout ${store.list().length + 1}` })
       refresh()
       open(fresh.id)
+    },
+    /** Copy a unit, and say so when it couldn't go beside the original. */
+    duplicateUnit(towerId: string, unitId: string) {
+      const rowsIn = (l: EditorLayout) => l.towers.find((t) => t.id === towerId)?.rows.length ?? 0
+      const result = copyUnit(layout, towerId, unitId)
+      if (!apply(result) || !result.ok) return
+      if (rowsIn(result.layout) > rowsIn(layout)) setNotice('No room beside it, so the copy went in a new row above.')
     },
     duplicate(id: string) {
       const copy = store.duplicate(id)

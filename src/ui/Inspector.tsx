@@ -1,12 +1,13 @@
+import { cloneElement, useId, type CSSProperties } from 'react'
 import type { DepthChoice } from '../engine/depth'
 import type { Baseplate, Depth, RoofType, Width } from '../engine/model'
 import type { TowerDimensions } from '../engine/dimensions'
 import type { FilamentEstimate } from '../engine/filament'
 import type { HardwareLine } from '../engine/hardware'
-import type { Flag, PartLine } from '../engine/parts'
+import type { ColourRole, Flag, PartLine } from '../engine/parts'
 import {
   removeTower, removeUnit, rowProblems, setTowerWidth, toEngineTower, updateLayout, updateTower, updateUnit,
-  type EditorTower, type EditorUnit,
+  type Colours, type EditorTower, type EditorUnit,
 } from '../editor/layoutOps'
 import { depthMm } from './dims'
 import { printerLabel } from './data'
@@ -56,12 +57,19 @@ function UnitPanel({ editor, tower, unit, height }: { editor: Editor; tower: Edi
       <h2>{unit.kind === 'drawer' ? 'Drawer' : 'Sustainer'} {sizeCode}</h2>
       {unit.kind === 'drawer' ? (
         <>
-          <Field label="Gridfinity baseplate">
+          <Field
+            label="Gridfinity baseplate"
+            why={unit.width === 'S' ? undefined : unit.width === 'M'
+              ? 'Baseplates with 1 handle are made for S drawers only.'
+              : 'Baseplates with handles are made for S and M drawers only.'}
+          >
             <select value={unit.baseplate} onChange={(e) => set({ baseplate: e.target.value as Baseplate })}>
               <option value="none">None</option>
               <option value="plain">Plain</option>
-              {unit.width === 'S' && <option value="1 handle">With 1 handle</option>}
-              {(unit.width === 'S' || unit.width === 'M') && <option value="2 handles">With 2 handles</option>}
+              <option value="1 handle" disabled={unit.width !== 'S'}>With 1 handle{unit.width !== 'S' ? ' (S only)' : ''}</option>
+              <option value="2 handles" disabled={unit.width !== 'S' && unit.width !== 'M'}>
+                With 2 handles{unit.width !== 'S' && unit.width !== 'M' ? ' (S and M only)' : ''}
+              </option>
             </select>
           </Field>
           <Field label="Key">
@@ -87,6 +95,7 @@ function UnitPanel({ editor, tower, unit, height }: { editor: Editor; tower: Edi
         <p className="muted">S and M sustainers come in one module type.</p>
       )}
       <div className="panel-actions">
+        <button type="button" onClick={() => editor.duplicateUnit(tower.id, unit.id)}>Duplicate</button>
         <button type="button" onClick={() => editor.setSelection({ type: 'tower', towerId: tower.id })}>Tower settings</button>
         <button
           type="button"
@@ -116,15 +125,24 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
   return (
     <section className="panel" aria-label="Selected tower">
       <h2>Tower {index + 1}</h2>
-      <Field label="Width">
-        <select
-          value={tower.width ?? ''}
-          onChange={(e) => editor.apply(setTowerWidth(editor.layout, tower.id, e.target.value as Width))}
-        >
-          {!tower.width && <option value="">Set by the first unit</option>}
-          {(['S', 'M', 'L', 'XL'] as Width[]).map((w) => <option key={w} value={w}>{w}</option>)}
-        </select>
-      </Field>
+      {(() => {
+        const widths = (['S', 'M', 'L', 'XL'] as Width[]).map((w) => {
+          const r = w === tower.width ? null : setTowerWidth(editor.layout, tower.id, w)
+          return { w, why: r && !r.ok ? r.reason : undefined }
+        })
+        const blocked = widths.filter((x) => x.why)
+        return (
+          <Field label="Width" why={blocked.length ? blocked.map((x) => `${x.w}: ${x.why}.`).join(' ') : undefined}>
+            <select
+              value={tower.width ?? ''}
+              onChange={(e) => editor.apply(setTowerWidth(editor.layout, tower.id, e.target.value as Width))}
+            >
+              {!tower.width && <option value="">Set by the first unit</option>}
+              {widths.map(({ w, why }) => <option key={w} value={w} disabled={!!why}>{w}{why ? ' (unavailable)' : ''}</option>)}
+            </select>
+          </Field>
+        )
+      })()}
       {problems.length > 0 && (
         <ul className="problems">
           {problems.map((p) => <li key={p.rowIndex}>Row {p.rowIndex + 1}: {p.problem}</li>)}
@@ -133,14 +151,18 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
       {info.choice && <DepthPicker tower={tower} info={info} onPick={(depth) => set({ depth })} printer={printerLabel(editor.printer)} />}
       {info.error && <p className="problems">{info.error}</p>}
 
-      <Field label="Roof">
+      <Field label="Roof" why={tower.width === 'S' || tower.width === 'M' ? 'Heavyweight roofs are made for L and XL towers only.' : undefined}>
         <select value={tower.roof} onChange={(e) => set({ roof: e.target.value as RoofType })}>
           {ROOFS.map((r) => <option key={r.value} value={r.value} disabled={r.value === 'heavyweight' && (tower.width === 'S' || tower.width === 'M')}>
             {r.label}{r.value === 'heavyweight' && (tower.width === 'S' || tower.width === 'M') ? ' (L and XL only)' : ''}
           </option>)}
         </select>
       </Field>
-      <Field label="Bottom">
+      <Field
+        label="Bottom"
+        why={tower.roof === 'under table mount' ? 'An under-table tower hangs from its roof, so it has no base. Choose another roof to add one.' : undefined}
+        whyDisables
+      >
         <select
           value={tower.bottom}
           disabled={tower.roof === 'under table mount'}
@@ -152,7 +174,6 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
           <option value="casters">Base with casters</option>
         </select>
       </Field>
-      {tower.roof === 'under table mount' && <p className="muted">An under-table tower hangs from its roof.</p>}
       <Field label="Backbone">
         <select value={tower.backbone} onChange={(e) => set({ backbone: e.target.value as EditorTower['backbone'] })}>
           <option value="none">None</option>
@@ -214,12 +235,21 @@ function DepthPicker({ tower, info, onPick, printer }: { tower: EditorTower; inf
   )
 }
 
-function PartsSummary({ parts, colours }: { parts: PartLine[]; colours: { body: string; accent: string } }) {
+/** Colour roles in the order they're shown. "Primary" is the body colour (stored as `body`). */
+const ROLES = [
+  { role: 'body', name: 'Primary', covers: 'Modules, boxes, roofs, facades and bases' },
+  { role: 'secondary', name: 'Secondary', covers: 'Keys, locks and handles' },
+  { role: 'accent', name: 'Accent', covers: 'Runners and stoppers' },
+] as const
+const ROLE_NAME = Object.fromEntries(ROLES.map((r) => [r.role, r.name])) as Record<ColourRole, string>
+const swatches = (c: Colours) => ({ '--swatch-body': c.body, '--swatch-accent': c.accent, '--swatch-secondary': c.secondary }) as CSSProperties
+
+function PartsSummary({ parts, colours }: { parts: PartLine[]; colours: Colours }) {
   const total = parts.reduce((s, l) => s + l.qty, 0)
   const flagged = parts.filter((l) => l.flags.length > 0)
   const seen = new Set<string>()
   return (
-    <details className="parts" style={{ '--swatch-body': colours.body, '--swatch-accent': colours.accent } as React.CSSProperties}>
+    <details className="parts" style={swatches(colours)}>
       <summary>{total} parts to print{flagged.length ? `, ${flagged.length} need checking` : ''}</summary>
       <table>
         <tbody>
@@ -227,7 +257,7 @@ function PartsSummary({ parts, colours }: { parts: PartLine[]; colours: { body: 
             <tr key={l.path} className={l.flags.length ? 'is-flagged' : ''}>
               <td className="qty">{l.qty}×</td>
               <td>
-                <span className={`swatch swatch-${l.role}`} aria-label={l.role === 'body' ? 'Body colour' : 'Accent colour'} />
+                <span className={`swatch swatch-${l.role}`} aria-label={`${ROLE_NAME[l.role]} colour`} />
                 {fileName(l.path)}
                 <cite className="line-source">{l.source}</cite>
                 {l.flags.map((f) => {
@@ -265,14 +295,17 @@ function SizeSummary({ dims }: { dims: TowerDimensions }) {
   )
 }
 
-function FilamentSummary({ grams, colours }: { grams: FilamentEstimate; colours: { body: string; accent: string } }) {
+function FilamentSummary({ grams, colours }: { grams: FilamentEstimate; colours: Colours }) {
   return (
-    <div className="summary" style={{ '--swatch-body': colours.body, '--swatch-accent': colours.accent } as React.CSSProperties}>
+    <div className="summary" style={swatches(colours)}>
       <h3>Filament</h3>
       <p className="size-line">About {formatGrams(grams.total)}</p>
       <p className="small">
-        <span className="swatch swatch-body" aria-hidden="true" />Body {formatGrams(grams.body)}
-        <span className="swatch swatch-accent" aria-hidden="true" style={{ marginLeft: '0.9rem' }} />Accent {formatGrams(grams.accent)}
+        {ROLES.map(({ role }) => (
+          <span key={role} className="gram-role">
+            <span className={`swatch swatch-${role}`} aria-hidden="true" />{ROLE_NAME[role]} {formatGrams(grams[role])}
+          </span>
+        ))}
       </p>
       <p className="muted small">Parts only, at Bambu Studio's default settings. Supports and colour-change purge aren't included.</p>
     </div>
@@ -317,15 +350,16 @@ function LayoutTotals({ info }: { info: Map<string, TowerInfo> }) {
   if (towers.length === 0) return null
   const parts = towers.reduce((n, t) => n + t.parts!.reduce((m, l) => m + l.qty, 0), 0)
   const grams = towers.reduce((g, t) => ({
-    body: g.body + (t.grams?.body ?? 0), accent: g.accent + (t.grams?.accent ?? 0), total: g.total + (t.grams?.total ?? 0),
-  }), { body: 0, accent: 0, total: 0 })
+    body: g.body + (t.grams?.body ?? 0), accent: g.accent + (t.grams?.accent ?? 0),
+    secondary: g.secondary + (t.grams?.secondary ?? 0), total: g.total + (t.grams?.total ?? 0),
+  }), { body: 0, accent: 0, secondary: 0, total: 0 })
   const hardware = new Map<string, number>()
   for (const t of towers) for (const h of t.hardware ?? []) hardware.set(h.item, (hardware.get(h.item) ?? 0) + h.qty)
   return (
     <div className="summary">
       <h3>Whole layout</h3>
       <p className="size-line">{parts} parts, about {formatGrams(grams.total)}</p>
-      <p className="muted small">Body {formatGrams(grams.body)}, accent {formatGrams(grams.accent)}. Towers still being built aren't counted.</p>
+      <p className="muted small">{ROLES.map(({ role, name }) => `${name} ${formatGrams(grams[role])}`).join(', ')}. Towers still being built aren't counted.</p>
       {hardware.size > 0 && (
         <details className="parts">
           <summary>Hardware for every tower</summary>
@@ -376,14 +410,16 @@ function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, Tower
       <Field label="Name">
         <input value={layout.name} onChange={(e) => set({ name: e.target.value })} />
       </Field>
-      <div className="colours">
-        <Field label="Body colour">
-          <input type="color" value={layout.colours.body} onChange={(e) => set({ colours: { ...layout.colours, body: e.target.value } })} />
-        </Field>
-        <Field label="Accent colour">
-          <input type="color" value={layout.colours.accent} onChange={(e) => set({ colours: { ...layout.colours, accent: e.target.value } })} />
-        </Field>
-      </div>
+      <fieldset className="colours">
+        <legend>Colours</legend>
+        {ROLES.map(({ role, name, covers }) => (
+          <label key={role} className="colour-row">
+            <input type="color" value={layout.colours[role]} onChange={(e) => set({ colours: { ...layout.colours, [role]: e.target.value } })} />
+            <span className="colour-name">{name}</span>
+            <span className="colour-covers small muted">{covers}</span>
+          </label>
+        ))}
+      </fieldset>
       <Field label="Parts that come split">
         <select value={layout.splitParts} onChange={(e) => set({ splitParts: e.target.value as typeof layout.splitParts })}>
           <option value="auto">Whole when it fits, split when it doesn't</option>
@@ -393,7 +429,7 @@ function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, Tower
       </Field>
       <label className="check">
         <input type="checkbox" checked={layout.allowColourMixing} onChange={(e) => set({ allowColourMixing: e.target.checked })} />
-        Mix body and accent parts on one plate (needs an AMS)
+        Mix colours on one plate (needs an AMS)
       </label>
       <TowerList editor={editor} info={info} />
       <LayoutTotals info={info} />
@@ -401,11 +437,19 @@ function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, Tower
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * A labelled control. `why` explains what isn't available and why: shown under the control (so it isn't missed,
+ * and works on touch), as its tooltip, and read out with it. `whyDisables` says the whole control is off.
+ */
+function Field({ label, why, whyDisables, children }: {
+  label: string; why?: string; whyDisables?: boolean; children: React.ReactElement<{ 'aria-describedby'?: string }>
+}) {
+  const id = useId()
   return (
-    <label className="field">
+    <label className="field" title={why}>
       <span>{label}</span>
-      {children}
+      {why ? cloneElement(children, { 'aria-describedby': id }) : children}
+      {why && <span id={id} className={`field-why${whyDisables ? ' is-off' : ''}`}>{whyDisables ? 'Unavailable: ' : ''}{why}</span>}
     </label>
   )
 }

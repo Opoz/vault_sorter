@@ -51,7 +51,7 @@ describe.skipIf(!enabled)('a Bambu project sliced by Bambu Studio', () => {
       const chunks: Uint8Array[] = []
       await writeBambuProject(
         {
-          plates, printer, settings, colours: { body: '#D3D5D2', accent: '#2F3236' },
+          plates, printer, settings, colours: { body: '#D3D5D2', accent: '#8A8F93', secondary: '#2F3236' },
           meshFor: async (path) => {
             const b = readFileSync(join(VAULT, path))
             return readStl(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer)

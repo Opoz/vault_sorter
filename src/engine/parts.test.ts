@@ -210,4 +210,19 @@ describe('partsForTower', () => {
     expect(parts['x4 Runner Slide.stl']).toBe(4)
     expect(parts['Latch.stl']).toBe(2)
   })
+
+  // Colour roles as the group prints them: runners in the accent colour; keys, locks and handles in a
+  // secondary colour; everything else in the body colour.
+  it('gives runners the accent colour and keys, locks and handles the secondary colour', () => {
+    const roles = (t: Tower) => Object.fromEntries(partsForTower(t, opts).map((l) => [l.path.split('/').pop(), l.role]))
+    const drawers = roles(tower({ width: 'S', depth: 3, roof: 'grid', rows: [{ height: '1F', units: [drawer('S')] }] }))
+    const sustainers = roles(tower({ width: 'S', depth: 3, rows: [{ height: '1F', units: [{ kind: 'sustainer', width: 'S', moduleType: 'flat' }] }] }))
+
+    expect(drawers).toMatchObject({
+      'x3 Runner Slide.stl': 'accent', 'x3 Runner Guide.stl': 'accent', 'Runner Stopper.stl': 'accent',
+      'Key (Turn On Supports).stl': 'secondary', 'Top Handle (Turn On Supports).stl': 'secondary',
+      'S3 Module 1F.stl': 'body', 'Key Cap.stl': 'body', 'Latch.stl': 'body',
+    })
+    expect(sustainers).toMatchObject({ 'LOCK OUTER PART 1F.stl': 'secondary', 'LOCK HOLDER.stl': 'body' })
+  })
 })

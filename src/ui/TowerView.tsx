@@ -1,8 +1,8 @@
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Depth } from '../engine/model'
-import { rowProblems, type Colours, type EditorRow, type EditorTower, type EditorUnit } from '../editor/layoutOps'
-import { BASE_MM, FOOT_MM, LIP_MM, ROOF_MM, towerHeightMm, WHEEL_MM, WIDTH_MM, rowHeightMm } from './dims'
+import { missingWidth, rowProblems, type Colours, type EditorRow, type EditorTower, type EditorUnit } from '../editor/layoutOps'
+import { BASE_MM, belowBaseMm, CASTER, FEET_INSET_MM, FOOT_MM, HANDLE_MM, LIP_MM, ROOF_MM, towerHeightMm, TYRE_WIDTH_MM, WHEEL_MM, WIDTH_MM, rowHeightMm } from './dims'
 import { describe } from './text'
 import { UnitBlock } from './UnitBlock'
 import type { Selection } from './useEditor'
@@ -19,9 +19,10 @@ interface Props {
   selection: Selection
   dragging: boolean
   onSelect: (s: Selection) => void
+  onDuplicate: (towerId: string, unitId: string) => void
 }
 
-export function TowerView({ tower, index, colours, scale, depth, heightMm: measuredHeight, fitState, selection, dragging, onSelect }: Props) {
+export function TowerView({ tower, index, colours, scale, depth, heightMm: measuredHeight, fitState, selection, dragging, onSelect, onDuplicate }: Props) {
   const width = tower.width
   const problems = rowProblems(tower)
   const isSelected = selection?.type === 'tower' && selection.towerId === tower.id
@@ -43,7 +44,7 @@ export function TowerView({ tower, index, colours, scale, depth, heightMm: measu
         if (!(e.target as HTMLElement).closest('.placed')) onSelect({ type: 'tower', towerId: tower.id })
       }}
       className={`tower${isSelected ? ' is-selected' : ''}${dragging && zoneOver ? ' is-zone-over' : ''}`}
-      style={{ '--tower-w': `${towerPx}px` } as CSSProperties}
+      style={{ '--tower-w': `${towerPx}px`, '--body': colours.body, '--secondary': colours.secondary } as CSSProperties}
     >
       <button type="button" className="tower-head" onClick={() => onSelect({ type: 'tower', towerId: tower.id })}>
         <span className="tower-name">Tower {index + 1}</span>
@@ -57,9 +58,30 @@ export function TowerView({ tower, index, colours, scale, depth, heightMm: measu
         {tower.rows.length === 0 ? (
           <EmptyDrop towerId={tower.id} />
         ) : (
-          <div className="tower-stack">
+          <div
+            className="tower-stack"
+            style={{
+              paddingTop: tower.roof === 'grid' ? HANDLE_MM.height * scale : undefined,
+              paddingBottom: belowBaseMm(tower.bottom) * scale || undefined,
+              // Wheels stand outside the base: keep their width free on both sides.
+              marginInline: tower.bottom === 'wheels' ? (TYRE_WIDTH_MM + 4) * scale : undefined,
+            }}
+          >
             {tower.roof !== 'none' && tower.roof !== 'under table mount' && (
-              <div className="tower-roof" style={{ height: Math.max(ROOF_MM[tower.roof] * scale, 4) }} title={`${tower.roof} roof`} />
+              <div className="tower-roof" style={{ height: Math.max(ROOF_MM[tower.roof] * scale, 4) }} title={`${tower.roof} roof`}>
+                {tower.roof === 'grid' && (
+                  <span
+                    className="top-handle"
+                    title="Top handle"
+                    style={{
+                      width: HANDLE_MM.length * scale,
+                      height: HANDLE_MM.height * scale,
+                      borderRadius: HANDLE_MM.corner * scale,
+                      borderWidth: `${HANDLE_MM.top * scale}px ${HANDLE_MM.side * scale}px ${HANDLE_MM.bottom * scale}px`,
+                    }}
+                  />
+                )}
+              </div>
             )}
             {tower.roof === 'under table mount' && <div className="tower-table" title="Under-table mount" />}
             <Gap towerId={tower.id} index={tower.rows.length} active={dragging} top />
@@ -76,16 +98,18 @@ export function TowerView({ tower, index, colours, scale, depth, heightMm: measu
                   selection={selection}
                   dragging={dragging}
                   onSelect={onSelect}
+                  copyable={width && missingWidth(width, row) === row.units.at(-1)?.width ? row.units.at(-1) : undefined}
+                  onDuplicate={onDuplicate}
                 />
                 <Gap towerId={tower.id} index={i} active={dragging} />
               </div>
             ))}
             <div className="tower-lip" style={{ height: LIP_MM * scale }} />
-            {hasBase && <Bottom kind={tower.bottom} scale={scale} />}
+            {hasBase && width && <Bottom kind={tower.bottom} scale={scale} widthMm={WIDTH_MM[width]} />}
           </div>
         )}
         {tower.rows.length > 0 && width && (
-          <div className="dim dim-height" style={{ height: drawnHeight * scale }}>
+          <div className="dim dim-height" style={{ height: drawnHeight * scale, marginBottom: belowBaseMm(tower.bottom) * scale }}>
             <span>{Math.round(heightMm)} mm</span>
           </div>
         )}
@@ -113,8 +137,11 @@ function RowView(props: {
   selection: Selection
   dragging: boolean
   onSelect: (s: Selection) => void
+  /** Offered in the row's free space when a copy of its last unit would fill it. */
+  copyable?: EditorUnit
+  onDuplicate: (towerId: string, unitId: string) => void
 }) {
-  const { towerId, row, rowIndex, towerWidthPx, colours, scale, problem, selection, dragging, onSelect } = props
+  const { towerId, row, rowIndex, towerWidthPx, colours, scale, problem, selection, dragging, onSelect, copyable, onDuplicate } = props
   const usedPx = row.units.reduce((sum, u) => sum + WIDTH_MM[u.width] * scale, 0)
   return (
     <div className={`tower-row${problem ? ' is-incomplete' : ''}`} style={{ height: rowHeightMm(row.height) * scale }}>
@@ -133,6 +160,15 @@ function RowView(props: {
       {problem && (
         <Slot towerId={towerId} rowId={row.id} widthPx={Math.max(towerWidthPx - usedPx, 24)} active={dragging}>
           <span className="slot-text">{problem}</span>
+          {copyable && !dragging && (
+            <button
+              type="button"
+              className="slot-copy"
+              onClick={(e) => { e.stopPropagation(); onDuplicate(towerId, copyable.id) }}
+            >
+              + Copy the {copyable.width} {copyable.kind}
+            </button>
+          )}
         </Slot>
       )}
       <span className="sr-only">Row {rowIndex + 1}</span>
@@ -203,27 +239,32 @@ function EmptyDrop({ towerId }: { towerId: string }) {
   )
 }
 
-function Bottom({ kind, scale }: { kind: EditorTower['bottom']; scale: number }) {
+/**
+ * The base and what it stands on, seen from the front. Feet come as a front and a back bar, each 60 mm narrower
+ * than the tower (measured), so one bar shows. Wheels sit outside the base at the back, edge-on from the
+ * front: a tall tyre beside each side, standing on the floor level with the front foot. Casters are bought; drawn at a typical size.
+ */
+function Bottom({ kind, scale, widthMm }: { kind: EditorTower['bottom']; scale: number; widthMm: number }) {
+  const px = (mm: number) => mm * scale
+  const foot = <span className="foot" style={{ width: px(widthMm - FEET_INSET_MM), height: px(FOOT_MM) }} />
   return (
-    <div className="tower-base" style={{ height: BASE_MM * scale }}>
+    <div className="tower-base" style={{ height: px(BASE_MM) }}>
       {kind === 'wheels' && (
         <>
-          <span className="wheel wheel-left" style={{ width: WHEEL_MM * scale * 0.35, height: WHEEL_MM * scale }} />
-          <span className="foot foot-right" style={{ height: FOOT_MM * scale }} />
+          {(['left', 'right'] as const).map((side) => (
+            <span key={side} className={`tyre tyre-${side}`} style={{ width: px(TYRE_WIDTH_MM), height: px(WHEEL_MM), bottom: -px(FOOT_MM), borderRadius: px(10) }} />
+          ))}
+          {foot}
         </>
       )}
-      {kind === 'feet' && (
-        <>
-          <span className="foot foot-left" style={{ height: FOOT_MM * scale }} />
-          <span className="foot foot-right" style={{ height: FOOT_MM * scale }} />
-        </>
-      )}
-      {kind === 'casters' && (
-        <>
-          <span className="caster caster-left" />
-          <span className="caster caster-right" />
-        </>
-      )}
+      {kind === 'feet' && foot}
+      {kind === 'casters' && (['left', 'right'] as const).map((side) => (
+        <span key={side} className={`caster caster-${side}`} style={{ width: px(CASTER.plate), height: px(CASTER.height) }}>
+          <span className="caster-plate" style={{ height: px(4) }} />
+          <span className="caster-fork" style={{ width: px(CASTER.fork), height: px(CASTER.height - CASTER.wheel / 2 - 4) }} />
+          <span className="caster-wheel" style={{ width: px(CASTER.wheel), height: px(CASTER.wheel), marginTop: -px(CASTER.wheel / 2) }} />
+        </span>
+      ))}
     </div>
   )
 }

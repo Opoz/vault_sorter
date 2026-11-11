@@ -30,7 +30,7 @@ export interface ExportRequest {
   readonly catalog: Catalog
   readonly splitParts: 'auto' | 'whole' | 'split'
   readonly allowColourMixing: boolean
-  readonly colours: { readonly body: string; readonly accent: string }
+  readonly colours: { readonly body: string; readonly accent: string; readonly secondary: string }
 }
 
 /** The plates a Tower will be printed on, with the reserved areas of the printer kept clear. */

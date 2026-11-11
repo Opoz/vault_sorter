@@ -16,6 +16,21 @@ export const ROOF_MM: Record<RoofType, number> = {
 }
 export const BASE_MM = 52.2
 export const WHEEL_MM = 160
+/** Width of the TPU tyre, measured. */
+export const TYRE_WIDTH_MM = 40.6
+/** Each Feet bar is 60 mm narrower than its tower (S 104.8, M 194, L 269.6, XL 358.8; measured). */
+export const FEET_INSET_MM = 60
+/** Casters are bought, so sizes vary; drawn small and dark as in the Modifications manual (Casters Mode). */
+export const CASTER = { height: 48, plate: 34, fork: 22, wheel: 36 }
+
+/** How far below the base its feet, wheels or casters reach, so the tower can stand on the floor line. */
+export const belowBaseMm = (bottom: 'none' | 'feet' | 'wheels' | 'casters') =>
+  bottom === 'casters' ? CASTER.height : bottom === 'none' ? 0 : FOOT_MM
+/**
+ * Top Handle as seen from the front: measured 126 mm long and 51 mm tall. The loop's thickness and corner are
+ * drawn from USSA's renders, not measured.
+ */
+export const HANDLE_MM = { length: 126, height: 51, top: 13, side: 22, bottom: 17, corner: 16 }
 export const FOOT_MM = 60.5
 
 export const rowHeightMm = (h: Height) => FLOORS[h] * FLOOR_PITCH_MM

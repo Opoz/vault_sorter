@@ -1,7 +1,7 @@
 """Turn a project the Bambu Studio app saved into a settings template for that printer (see docs/adr/0003).
 
-The saved project must have Bambu PLA Basic and a Bambu TPU 95A filament loaded. The template has three
-filament slots: PLA (Body colour), PLA (Accent colour), TPU (tyres). Colours are filled in at export.
+The saved project must have Bambu PLA Basic and a Bambu TPU 95A filament loaded. The template has four
+filament slots: PLA (Primary colour), PLA (Secondary colour), PLA (Accent colour), TPU (tyres). Colours are filled in at export.
 
 Usage: python -I capture.py <saved project.3mf> [more.3mf ...]
 Writes src/data/bambu/<printer id>.json and updates src/data/bambu/index.json.
@@ -87,7 +87,7 @@ def capture(path: Path) -> tuple[str, dict]:
     if 'PLA' not in types or 'TPU' not in types:
         raise SystemExit(f'{path.name}: needs Bambu PLA Basic and a Bambu TPU 95A loaded; has {saved["filament_settings_id"]}')
     pla, tpu = types.index('PLA'), types.index('TPU')
-    template = reslot(saved, [pla, pla, tpu])
+    template = reslot(saved, [pla, pla, pla, tpu])
     return printer_id(saved['printer_settings_id']), template
 
 

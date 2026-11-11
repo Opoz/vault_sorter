@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addTower, moveRow, newLayout, placeUnit, removeUnit, rowProblems, setTowerWidth, updateTower,
+  addTower, duplicateUnit, moveRow, newLayout, placeUnit, removeUnit, rowProblems, setTowerWidth, updateTower,
   type EditorLayout, type OpResult, type UnitSpec,
 } from './layoutOps'
 
@@ -107,5 +107,33 @@ describe('layout editing', () => {
     const hung = ok(updateTower(wheeled, towerId, { roof: 'under table mount' }))
 
     expect(hung.towers[0].bottom).toBe('none')
+  })
+
+  it('duplicates a unit into the free space beside it, keeping its settings', () => {
+    const { layout, towerId } = towerWith(drawer('L'))
+    const s = ok(placeUnit(ok(setTowerWidth(ok(removeUnit(layout, towerId, layout.towers[0].rows[0].units[0].id)), towerId, 'L')),
+      towerId, { kind: 'newRow', index: 0 }, drawer('S')))
+    const original = s.towers[0].rows[0].units[0]
+
+    const copied = ok(duplicateUnit(s, towerId, original.id))
+
+    const row = copied.towers[0].rows[0]
+    expect(copied.towers[0].rows).toHaveLength(1)
+    expect(row.units).toHaveLength(2)
+    expect(row.units[1]).toEqual({ ...original, id: row.units[1].id })
+    expect(row.units[1].id).not.toBe(original.id)
+  })
+
+  it('puts the copy in a new row directly above when there is no room beside it', () => {
+    const { layout, towerId } = towerWith(drawer('M', '2F'), drawer('M'))
+    const lower = layout.towers[0].rows[0]
+
+    const copied = ok(duplicateUnit(layout, towerId, lower.units[0].id))
+
+    const rows = copied.towers[0].rows
+    expect(rows).toHaveLength(3)
+    expect(rows[0].id).toBe(lower.id)
+    expect(rows[1].height).toBe('2F')
+    expect(rows[1].units[0].width).toBe('M')
   })
 })

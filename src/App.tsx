@@ -14,7 +14,7 @@ import {
 } from './editor/layoutOps'
 import { HEIGHTS, WIDTHS, type Depth, type Unit } from './engine/model'
 import { catalog, printerLabel, printers, printerSource } from './ui/data'
-import { towerHeightMm, WHEEL_MM, WIDTH_MM } from './ui/dims'
+import { belowBaseMm, HANDLE_MM, towerHeightMm, WIDTH_MM } from './ui/dims'
 import { Inspector, type TowerInfo } from './ui/Inspector'
 import { Palette, PALETTE_SCALE } from './ui/Palette'
 import { TowerView } from './ui/TowerView'
@@ -37,7 +37,7 @@ function useCanvasScale(layout: EditorLayout) {
     observer.current.observe(el)
   }, [])
   const tallest = Math.max(400, ...layout.towers.map((t) =>
-    towerHeightMm(t.rows, t.roof, t.bottom !== 'none') + (t.bottom === 'wheels' ? WHEEL_MM / 2 : 0)))
+    towerHeightMm(t.rows, t.roof, t.bottom !== 'none') + belowBaseMm(t.bottom) + (t.roof === 'grid' ? HANDLE_MM.height : 0)))
   const across = layout.towers.reduce((sum, t) => sum + (t.width ? WIDTH_MM[t.width] : 250), 0) + 250
   const gaps = (layout.towers.length + 1) * 70
   // Leave room for the drop gaps that open between rows during a drag, so the canvas never has to scroll then.
@@ -186,6 +186,7 @@ export default function App() {
                     selection={editor.selection}
                     dragging={dragging !== null}
                     onSelect={editor.setSelection}
+                    onDuplicate={editor.duplicateUnit}
                   />
                 )
               })}

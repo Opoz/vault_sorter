@@ -36,6 +36,7 @@ export function UnitBlock({ kind, width, height, colours, scale, selected, label
     borderRadius: mm(8),
     '--body': colours.body,
     '--accent': colours.accent,
+    '--secondary': colours.secondary,
   } as CSSProperties
 
   const pill = (bottom: number) => (
