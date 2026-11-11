@@ -1,0 +1,22 @@
+# Licensed USSA Vault files: never commit (see docs/adr/0001)
+261021_VAULT_USSA_S/
+*VAULT_USSA*/
+*.stl
+*.3mf
+__MACOSX/
+
+# Dependencies and build output
+node_modules/
+dist/
+.vite/
+
+# Local scratch and environment
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
+
+# Python tooling
+.venv/
+__pycache__/

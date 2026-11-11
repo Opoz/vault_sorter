@@ -1,0 +1,3 @@
+# Fit test uses the full bed with no safety margin
+
+A Part fits a printer if its stored orientation, rotated by any angle about the vertical axis, lies within the printable area from Bambu Studio's own printer profile. No clearance margin is applied; spare room under 2 mm is shown as a "tight fit" warning instead of a rejection. XL Modules fit the H2S (340 × 320 mm) only diagonally, with 0.1 to 0.2 mm to spare, so any margin or axis-aligned check wrongly rejects them. That false rejection is the bug users reported in the existing planner. Tipping a Part onto another side is never counted as fitting, even when it would geometrically fit, because those prints are unrealistic.

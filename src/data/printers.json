@@ -1,0 +1,250 @@
+{
+  "source": "bambulab/BambuStudio@930fe93851afbc76b1c64dd37d8728b6a9afc89c",
+  "printers": [
+    {
+      "id": "a1",
+      "name": "Bambu Lab A1",
+      "bed": {
+        "width": 256,
+        "depth": 256
+      },
+      "height": 256,
+      "plate": {
+        "width": 256,
+        "depth": 256,
+        "height": 256
+      },
+      "excludedAreas": []
+    },
+    {
+      "id": "a1-mini",
+      "name": "Bambu Lab A1 mini",
+      "bed": {
+        "width": 180,
+        "depth": 180
+      },
+      "height": 180,
+      "plate": {
+        "width": 180,
+        "depth": 180,
+        "height": 180
+      },
+      "excludedAreas": []
+    },
+    {
+      "id": "a2l",
+      "name": "Bambu Lab A2L",
+      "bed": {
+        "width": 330,
+        "depth": 320
+      },
+      "height": 325,
+      "plate": {
+        "width": 330,
+        "depth": 320,
+        "height": 325
+      },
+      "excludedAreas": []
+    },
+    {
+      "id": "h2c",
+      "name": "Bambu Lab H2C",
+      "bed": {
+        "width": 325,
+        "depth": 320
+      },
+      "height": 320,
+      "plate": {
+        "width": 330,
+        "depth": 320,
+        "height": 325
+      },
+      "excludedAreas": []
+    },
+    {
+      "id": "h2d",
+      "name": "Bambu Lab H2D",
+      "bed": {
+        "width": 325,
+        "depth": 320
+      },
+      "height": 325,
+      "plate": {
+        "width": 350,
+        "depth": 320,
+        "height": 325
+      },
+      "excludedAreas": []
+    },
+    {
+      "id": "h2d-pro",
+      "name": "Bambu Lab H2D Pro",
+      "bed": {
+        "width": 325,
+        "depth": 320
+      },
+      "height": 325,
+      "plate": {
+        "width": 350,
+        "depth": 320,
+        "height": 325
+      },
+      "excludedAreas": []
+    },
+    {
+      "id": "h2s",
+      "name": "Bambu Lab H2S",
+      "bed": {
+        "width": 340,
+        "depth": 320
+      },
+      "height": 340,
+      "plate": {
+        "width": 340,
+        "depth": 320,
+        "height": 340
+      },
+      "excludedAreas": []
+    },
+    {
+      "id": "h3c",
+      "name": "Bambu Lab H3C",
+      "bed": {
+        "width": 330,
+        "depth": 320
+      },
+      "height": 325,
+      "plate": {
+        "width": 330,
+        "depth": 320,
+        "height": 325
+      },
+      "excludedAreas": []
+    },
+    {
+      "id": "p1p",
+      "name": "Bambu Lab P1P",
+      "bed": {
+        "width": 256,
+        "depth": 256
+      },
+      "height": 250,
+      "plate": {
+        "width": 256,
+        "depth": 256,
+        "height": 250
+      },
+      "excludedAreas": [
+        "18x0",
+        "18x28",
+        "0x28"
+      ]
+    },
+    {
+      "id": "p1s",
+      "name": "Bambu Lab P1S",
+      "bed": {
+        "width": 256,
+        "depth": 256
+      },
+      "height": 250,
+      "plate": {
+        "width": 256,
+        "depth": 256,
+        "height": 250
+      },
+      "excludedAreas": [
+        "18x0",
+        "18x28",
+        "0x28"
+      ]
+    },
+    {
+      "id": "p2s",
+      "name": "Bambu Lab P2S",
+      "bed": {
+        "width": 256,
+        "depth": 256
+      },
+      "height": 256,
+      "plate": {
+        "width": 256,
+        "depth": 256,
+        "height": 256
+      },
+      "excludedAreas": []
+    },
+    {
+      "id": "x1",
+      "name": "Bambu Lab X1",
+      "bed": {
+        "width": 256,
+        "depth": 256
+      },
+      "height": 250,
+      "plate": {
+        "width": 256,
+        "depth": 256,
+        "height": 250
+      },
+      "excludedAreas": [
+        "18x0",
+        "18x28",
+        "0x28"
+      ]
+    },
+    {
+      "id": "x1-carbon",
+      "name": "Bambu Lab X1 Carbon",
+      "bed": {
+        "width": 256,
+        "depth": 256
+      },
+      "height": 250,
+      "plate": {
+        "width": 256,
+        "depth": 256,
+        "height": 250
+      },
+      "excludedAreas": [
+        "18x0",
+        "18x28",
+        "0x28"
+      ]
+    },
+    {
+      "id": "x1e",
+      "name": "Bambu Lab X1E",
+      "bed": {
+        "width": 256,
+        "depth": 256
+      },
+      "height": 250,
+      "plate": {
+        "width": 256,
+        "depth": 256,
+        "height": 250
+      },
+      "excludedAreas": [
+        "18x0",
+        "18x28",
+        "0x28"
+      ]
+    },
+    {
+      "id": "x2d",
+      "name": "Bambu Lab X2D",
+      "bed": {
+        "width": 256,
+        "depth": 256
+      },
+      "height": 261,
+      "plate": {
+        "width": 256,
+        "depth": 256,
+        "height": 261
+      },
+      "excludedAreas": []
+    }
+  ]
+}
