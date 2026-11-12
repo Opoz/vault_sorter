@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addTower, duplicateUnit, moveRow, newLayout, placeUnit, removeUnit, rowProblems, setTowerWidth, updateTower,
+  addTower, changePrinted, duplicateUnit, moveRow, newLayout, placeUnit, removeUnit, rowProblems, setTowerWidth, updateTower,
   type EditorLayout, type OpResult, type UnitSpec,
 } from './layoutOps'
 
@@ -135,5 +135,15 @@ describe('layout editing', () => {
     expect(rows[0].id).toBe(lower.id)
     expect(rows[1].height).toBe('2F')
     expect(rows[1].units[0].width).toBe('M')
+  })
+
+  it('counts printed parts up and down for a tower, never below zero', () => {
+    const { layout, towerId } = towerWith(drawer('M'))
+
+    const once = ok(changePrinted(layout, towerId, { 'A/Key.stl': 2, 'A/Module.stl': 1 }))
+    const undone = ok(changePrinted(once, towerId, { 'A/Key.stl': -1, 'A/Module.stl': -3 }))
+
+    expect(once.towers[0].printed).toEqual({ 'A/Key.stl': 2, 'A/Module.stl': 1 })
+    expect(undone.towers[0].printed).toEqual({ 'A/Key.stl': 1 })
   })
 })

@@ -6,9 +6,10 @@ import type { FilamentEstimate } from '../engine/filament'
 import type { HardwareLine } from '../engine/hardware'
 import type { ColourRole, Flag, PartLine } from '../engine/parts'
 import { DENSITY_SPACING_MM, SMALL_PART_EDGE_MM, type Density } from '../engine/plates'
+import { partProgress, type Printed } from '../engine/progress'
 import {
-  removeTower, removeUnit, rowProblems, setTowerWidth, toEngineTower, updateLayout, updateTower, updateUnit,
-  type Colours, type EditorTower, type EditorUnit,
+  changePrinted, removeTower, removeUnit, rowProblems, setTowerWidth, toEngineTower, updateLayout, updateTower, updateUnit,
+  type Colours, type EditorLayout, type EditorTower, type EditorUnit,
 } from '../editor/layoutOps'
 import { depthMm } from './dims'
 import { printerLabel } from './data'
@@ -185,11 +186,29 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
 
       {info.dimensions && <SizeSummary dims={info.dimensions} />}
       {info.grams && <FilamentSummary grams={info.grams} colours={editor.layout.colours} />}
-      {info.parts && <PartsSummary parts={info.parts} colours={editor.layout.colours} />}
+      {info.parts && (
+        <ProgressSummary
+          parts={info.parts}
+          printed={tower.printed ?? {}}
+          onReset={() => {
+            if (window.confirm(`Clear the print progress for Tower ${index + 1}?`)) {
+              editor.apply(changePrinted(editor.layout, tower.id, Object.fromEntries(Object.entries(tower.printed ?? {}).map(([p, n]) => [p, -n]))))
+            }
+          }}
+        />
+      )}
+      {info.parts && (
+        <PartsSummary
+          parts={info.parts}
+          colours={editor.layout.colours}
+          printed={tower.printed ?? {}}
+          onStep={(path, delta) => editor.apply(changePrinted(editor.layout, tower.id, { [path]: delta }))}
+        />
+      )}
       {info.hardware && info.hardware.length > 0 && <HardwareSummary lines={info.hardware} />}
       {info.depth && info.parts && (() => {
         const built = toEngineTower(tower, info.depth)
-        return built ? <ExportPanel editor={editor} tower={built} towerName={`Tower ${index + 1}`} /> : null
+        return built ? <ExportPanel editor={editor} tower={built} towerId={tower.id} towerName={`Tower ${index + 1}`} /> : null
       })()}
 
       <div className="panel-actions">
@@ -245,9 +264,28 @@ const ROLES = [
 const ROLE_NAME = Object.fromEntries(ROLES.map((r) => [r.role, r.name])) as Record<ColourRole, string>
 const swatches = (c: Colours) => ({ '--swatch-body': c.body, '--swatch-accent': c.accent, '--swatch-secondary': c.secondary }) as CSSProperties
 
-function PartsSummary({ parts, colours }: { parts: PartLine[]; colours: Colours }) {
+/** Print progress for a tower: parts printed out of the parts list. */
+function ProgressSummary({ parts, printed, onReset }: { parts: PartLine[]; printed: Printed; onReset: () => void }) {
+  const { done, total } = partProgress(parts, printed)
+  return (
+    <div className="summary">
+      <h3>Print progress</h3>
+      <p className="size-line">{done === total ? `All ${total} parts printed` : `${done} of ${total} parts printed`}</p>
+      <progress className="print-progress" max={total} value={done} aria-label="Parts printed" />
+      <p className="muted small">
+        Count parts in the list below, or mark whole plates under Print files.
+        {done > 0 && <> <button type="button" className="link" onClick={onReset}>Clear progress</button></>}
+      </p>
+    </div>
+  )
+}
+
+function PartsSummary({ parts, colours, printed, onStep }: {
+  parts: PartLine[]; colours: Colours; printed: Printed; onStep: (path: string, delta: number) => void
+}) {
   const total = parts.reduce((s, l) => s + l.qty, 0)
   const flagged = parts.filter((l) => l.flags.length > 0)
+  const { byPath } = partProgress(parts, printed)
   const seen = new Set<string>()
   return (
     <details className="parts" style={swatches(colours)}>
@@ -255,7 +293,7 @@ function PartsSummary({ parts, colours }: { parts: PartLine[]; colours: Colours 
       <table>
         <tbody>
           {parts.map((l) => (
-            <tr key={l.path} className={l.flags.length ? 'is-flagged' : ''}>
+            <tr key={l.path} className={`${l.flags.length ? 'is-flagged' : ''}${byPath.get(l.path) === l.qty ? ' is-printed' : ''}`}>
               <td className="qty">{l.qty}×</td>
               <td>
                 <span className={`swatch swatch-${l.role}`} aria-label={`${ROLE_NAME[l.role]} colour`} />
@@ -273,11 +311,30 @@ function PartsSummary({ parts, colours }: { parts: PartLine[]; colours: Colours 
                   )
                 })}
               </td>
+              <td className="printed-count">
+                <Counter
+                  label={fileName(l.path)}
+                  value={byPath.get(l.path) ?? 0}
+                  max={l.qty}
+                  onStep={(d) => onStep(l.path, d)}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
     </details>
+  )
+}
+
+/** Printed count for one part: − n/qty +. */
+function Counter({ label, value, max, onStep }: { label: string; value: number; max: number; onStep: (delta: number) => void }) {
+  return (
+    <span className="counter">
+      <button type="button" aria-label={`One fewer ${label} printed`} disabled={value <= 0} onClick={() => onStep(-1)}>−</button>
+      <span aria-label={`${value} of ${max} ${label} printed`}>{value}/{max}</span>
+      <button type="button" aria-label={`One more ${label} printed`} disabled={value >= max} onClick={() => onStep(1)}>+</button>
+    </span>
   )
 }
 
@@ -346,10 +403,14 @@ function Flags({ flags }: { flags: readonly Flag[] }) {
 
 const formatGrams = (g: number) => (g >= 1000 ? `${(g / 1000).toFixed(2)} kg` : `${Math.round(g)} g`)
 
-function LayoutTotals({ info }: { info: Map<string, TowerInfo> }) {
+function LayoutTotals({ info, layout }: { info: Map<string, TowerInfo>; layout: EditorLayout }) {
   const towers = [...info.values()].filter((t) => t.parts)
   if (towers.length === 0) return null
   const parts = towers.reduce((n, t) => n + t.parts!.reduce((m, l) => m + l.qty, 0), 0)
+  const printed = layout.towers.reduce((n, t) => {
+    const lines = info.get(t.id)?.parts
+    return n + (lines ? partProgress(lines, t.printed ?? {}).done : 0)
+  }, 0)
   const grams = towers.reduce((g, t) => ({
     body: g.body + (t.grams?.body ?? 0), accent: g.accent + (t.grams?.accent ?? 0),
     secondary: g.secondary + (t.grams?.secondary ?? 0), total: g.total + (t.grams?.total ?? 0),
@@ -360,6 +421,7 @@ function LayoutTotals({ info }: { info: Map<string, TowerInfo> }) {
     <div className="summary">
       <h3>Whole layout</h3>
       <p className="size-line">{parts} parts, about {formatGrams(grams.total)}</p>
+      {printed > 0 && <p className="small">{printed} of {parts} printed</p>}
       <p className="muted small">{ROLES.map(({ role, name }) => `${name} ${formatGrams(grams[role])}`).join(', ')}. Towers still being built aren't counted.</p>
       {hardware.size > 0 && (
         <details className="parts">
@@ -385,7 +447,9 @@ function TowerList({ editor, info }: { editor: Editor; info: Map<string, TowerIn
         {towers.map((t, i) => {
           const d = info.get(t.id)
           const rows = t.rows.length
-          const detail = !t.width ? 'empty' : `${t.width}${d?.depth ?? ''}, ${rows} row${rows === 1 ? '' : 's'}`
+          const progress = d?.parts && partProgress(d.parts, t.printed ?? {})
+          const printedText = progress && progress.done > 0 ? `, ${progress.done}/${progress.total} printed` : ''
+          const detail = !t.width ? 'empty' : `${t.width}${d?.depth ?? ''}, ${rows} row${rows === 1 ? '' : 's'}${printedText}`
           return (
             <li key={t.id}>
               <button type="button" onClick={() => editor.setSelection({ type: 'tower', towerId: t.id })}>
@@ -462,7 +526,7 @@ function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, Tower
         </p>
       </fieldset>
       <TowerList editor={editor} info={info} />
-      <LayoutTotals info={info} />
+      <LayoutTotals info={info} layout={layout} />
     </section>
   )
 }

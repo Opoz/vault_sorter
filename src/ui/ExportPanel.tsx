@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Tower } from '../engine/model'
+import type { PackedPlate } from '../engine/plates'
+import { platesDone, type Printed } from '../engine/progress'
+import { changePrinted } from '../editor/layoutOps'
 import {
   canStreamToFile, estimateProjectBytes, hasTemplate, platesFor, saveBambuProject, saveStlZip, type ExportRequest,
 } from '../export/exportTower'
@@ -25,7 +28,7 @@ const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'Abort
 // A folder chosen through the folder input lasts for the visit, shared by every tower's panel.
 let sessionSource: VaultSource | undefined
 
-export function ExportPanel({ editor, tower, towerName }: { editor: Editor; tower: Tower; towerName: string }) {
+export function ExportPanel({ editor, tower, towerId, towerName }: { editor: Editor; tower: Tower; towerId: string; towerName: string }) {
   const printer: Printer = editor.printer
   const remembers = canRememberFolders()
   const [folder, setFolder] = useState<FolderState>(() =>
@@ -52,10 +55,11 @@ export function ExportPanel({ editor, tower, towerName }: { editor: Editor; towe
     plateDensity: editor.layout.plateDensity,
     colours: editor.layout.colours,
   }
-  const plates = useMemo(() => {
-    try { return platesFor(req) } catch { return undefined }
+  const [plates, packError] = useMemo((): [PackedPlate[] | undefined, string | undefined] => {
+    try { return [platesFor(req), undefined] } catch (e) { return [undefined, e instanceof Error ? e.message : String(e)] }
   }, [tower, printer, editor.layout.splitParts, editor.layout.allowColourMixing, editor.layout.plateEdgeMm, editor.layout.plateDensity]) // eslint-disable-line react-hooks/exhaustive-deps
   const templated = hasTemplate(printer.id)
+  const printed = editor.layout.towers.find((t) => t.id === towerId)?.printed ?? {}
   const estimate = plates ? estimateProjectBytes(plates, catalog) : 0
 
   const fail = (e: unknown) => { if (!cancelled(e)) setMessage({ kind: 'error', text: e instanceof Error ? e.message : String(e) }) }
@@ -111,6 +115,8 @@ export function ExportPanel({ editor, tower, towerName }: { editor: Editor; towe
         </p>
       ))}
 
+      {plates && <PlateChecklist plates={plates} printed={printed} onChange={(delta) => editor.apply(changePrinted(editor.layout, towerId, delta))} />}
+
       <p className="small folder-line">
         {folder.kind === 'checking' && 'Looking for your Vault folder…'}
         {folder.kind === 'none' && (remembers
@@ -161,7 +167,7 @@ export function ExportPanel({ editor, tower, towerName }: { editor: Editor; towe
         <p className="small muted">
           {folder.kind !== 'ready'
             ? 'Saving is available once the Vault folder is chosen: the parts are read from it.'
-            : "Saving isn't available: some of this tower's parts couldn't be laid out on plates."}
+            : `Saving isn't available: this tower's parts couldn't be laid out on plates (${packError ?? 'unknown reason'}).`}
         </p>
       )}
       {progress && (
@@ -172,5 +178,40 @@ export function ExportPanel({ editor, tower, towerName }: { editor: Editor; towe
       )}
       {message && <p className={`small ${message.kind === 'error' ? 'export-error' : 'export-done'}`} role="status">{message.text}</p>}
     </div>
+  )
+}
+
+/**
+ * Each plate with a "printed" switch. Marking a plate adds its parts to the tower's print progress (never past
+ * what the parts list asks for); unmarking takes them away again.
+ */
+function PlateChecklist({ plates, printed, onChange }: {
+  plates: readonly PackedPlate[]; printed: Printed; onChange: (delta: Record<string, number>) => void
+}) {
+  const done = platesDone(plates, printed)
+  const wanted = new Map<string, number>()
+  for (const p of plates) for (const it of p.items) wanted.set(it.path, (wanted.get(it.path) ?? 0) + 1)
+  const toggle = (i: number) => {
+    const delta: Record<string, number> = {}
+    for (const it of plates[i].items) delta[it.path] = (delta[it.path] ?? 0) + (done[i] ? -1 : 1)
+    if (!done[i]) {
+      for (const path of Object.keys(delta)) delta[path] = Math.min(delta[path], (wanted.get(path) ?? 0) - (printed[path] ?? 0))
+    }
+    onChange(delta)
+  }
+  return (
+    <details className="parts plate-list">
+      <summary>Plates printed: {done.filter(Boolean).length} of {plates.length}</summary>
+      <ul>
+        {plates.map((p, i) => (
+          <li key={p.index}>
+            <label className="check">
+              <input type="checkbox" checked={done[i]} onChange={() => toggle(i)} />
+              Plate {p.index} <span className="muted">· {p.material === 'TPU' ? 'TPU' : p.role === 'body' ? 'primary' : p.role} · {p.items.length} part{p.items.length === 1 ? '' : 's'}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </details>
   )
 }

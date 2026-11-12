@@ -165,14 +165,17 @@ export function packPlates(lines: readonly PartLine[], options: PackOptions): Pa
         // A new plate keeps the chosen margin, or the most this part allows (and then it holds only this part).
         const m = margins.find((mm) => orientations.some((o) => o.w <= inner(mm).w && o.h <= inner(mm).d)) ?? tightMargin
         const sheet = { packer: new MaxRects(inner(m).w + spacing, inner(m).d + spacing), items: [] as PlacedItem[], margin: m, solo: m < margin, front: 0, left: Infinity, right: -Infinity }
-        // Reserved areas are blocked out, grown so parts keep the spacing from them on every side.
+        // Reserved areas are blocked out so parts keep the edge margin from them (like the plate edge, not the
+        // spacing between parts). Packed rectangles carry the spacing on their right and front side, so the
+        // blocked rectangle starts that much later and is that much shorter.
         for (const zone of options.printer.excluded ?? []) {
           const xs = zone.map(([x]) => x)
           const ys = zone.map(([, y]) => y)
-          const x0 = Math.min(...xs) - m
+          const zx0 = Math.min(...xs) - m, zx1 = Math.max(...xs) - m
           // Packer y runs from the back: flip the zone's y range.
-          const y0 = inner(m).d - (Math.max(...ys) - m)
-          sheet.packer.place({ x: x0, y: y0, w: Math.max(...xs) - m - x0 + spacing, h: Math.max(...ys) - Math.min(...ys) + spacing })
+          const zy0 = inner(m).d - (Math.max(...ys) - m), zy1 = inner(m).d - (Math.min(...ys) - m)
+          const x = zx0 - m + spacing, y = zy0 - m + spacing
+          sheet.packer.place({ x, y, w: Math.max(0.01, zx1 + m - x), h: Math.max(0.01, zy1 + m - y) })
         }
         sheets.push(sheet)
         const best = findOn(sheet, 'front') ?? findOn(sheet, 'clear') ?? findOn(sheet, 'any')
@@ -195,7 +198,7 @@ export function packPlates(lines: readonly PartLine[], options: PackOptions): Pa
       })
     }
     for (const sheet of sheets) {
-      plates.push({ role: group.role, material: group.material, items: centred(sheet.items, options, sheet.margin, spacing) })
+      plates.push({ role: group.role, material: group.material, items: centred(sheet.items, options, sheet.margin) })
     }
     for (const items of diagonalPlates(diagonal, group.material, options, margins, spacing)) {
       plates.push({ role: group.role, material: group.material, items })
@@ -230,9 +233,9 @@ function diagonalPlates(
   const plates: PlacedItem[][] = []
 
   /** The strips laid out at an angle where, stacked, they fit the plate within this margin; undefined if none. */
-  const layout = (group: typeof parts, margin: number) => layoutWithin(group, W - 2 * margin, D - 2 * margin)
-
-  const layoutWithin = (group: typeof parts, iw: number, id: number) => {
+  const layout = (group: typeof parts, margin: number) => {
+    const iw = W - 2 * margin
+    const id = D - 2 * margin
     const length = Math.max(...group.map((g) => g.rect.w))
     const thickness = group.reduce((t, g) => t + g.rect.h, 0) + spacing * (group.length - 1)
     let best: { phi: number; slack: number } | undefined
@@ -245,7 +248,9 @@ function diagonalPlates(
       const items = place(group, deg, thickness)
       const clear = items.every((item) => {
         const b = box(footprintOnPlate(item, options.catalog.get(item.path)))
-        return zones.every((z) => b.x1 + spacing <= z.x0 || b.x0 >= z.x1 + spacing || b.y1 + spacing <= z.y0 || b.y0 >= z.y1 + spacing)
+        // Reserved areas are kept clear by the edge margin, like the plate edge.
+        return zones.every((z) => b.x1 + margin <= z.x0 + 1e-6 || b.x0 >= z.x1 + margin - 1e-6 ||
+          b.y1 + margin <= z.y0 + 1e-6 || b.y0 >= z.y1 + margin - 1e-6)
       })
       if (clear && (!best || slack > best.slack)) best = { phi: deg, slack }
     }
@@ -302,7 +307,7 @@ function isSmall(part: PartMeasure, item: PlacedItem): boolean {
  * unless that would push something off the plate or into a reserved area; then it tries moving along one axis
  * only, and otherwise leaves them where they were packed.
  */
-function centred(items: PlacedItem[], options: PackOptions, margin: number, spacing: number): PlacedItem[] {
+function centred(items: PlacedItem[], options: PackOptions, margin: number): PlacedItem[] {
   const { width: W, depth: D } = options.printer.bed
   const boxes = items.map((item) => box(footprintOnPlate(item, options.catalog.get(item.path))))
   const all = boxes.reduce((a, b) => ({ x0: Math.min(a.x0, b.x0), y0: Math.min(a.y0, b.y0), x1: Math.max(a.x1, b.x1), y1: Math.max(a.y1, b.y1) }))
@@ -317,7 +322,8 @@ function centred(items: PlacedItem[], options: PackOptions, margin: number, spac
   })
   const fits = (sx: number, sy: number) => boxes.every((b, i) =>
     b.x0 + sx >= edgeOf[i] - 1e-6 && b.y0 + sy >= edgeOf[i] - 1e-6 && b.x1 + sx <= W - edgeOf[i] + 1e-6 && b.y1 + sy <= D - edgeOf[i] + 1e-6 &&
-    zones.every((z) => b.x1 + sx + spacing <= z.x0 || b.x0 + sx >= z.x1 + spacing || b.y1 + sy + spacing <= z.y0 || b.y0 + sy >= z.y1 + spacing))
+    zones.every((z) => b.x1 + sx + margin <= z.x0 + 1e-6 || b.x0 + sx >= z.x1 + margin - 1e-6 ||
+      b.y1 + sy + margin <= z.y0 + 1e-6 || b.y0 + sy >= z.y1 + margin - 1e-6))
   // As close to the middle as the plate allows: the full move if it fits, otherwise the largest part of it
   // (a reserved strip can block going all the way), on both axes or on one.
   for (let t = 1; t > 0; t -= 0.05) {

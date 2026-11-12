@@ -108,7 +108,17 @@ describe('packPlates', () => {
     const strip: Point[] = [[145, 310], [251, 310], [251, 326], [145, 326]]
     const H2C = { name: 'Bambu Lab H2C', bed: { width: 325, depth: 320 }, height: 320, excluded: [strip] }
     for (const plate of pack(mTower, H2C).plates) {
-      expect(Math.abs(centreOf(plate).cx - H2C.bed.width / 2), `plate ${plate.index}`).toBeLessThan(5)
+      const off = centreOf(plate).cx - H2C.bed.width / 2
+      if (Math.abs(off) < 5) continue
+      // Off-centre: then moving everything 1 mm towards the middle must bring a part (by its bounding box, as the
+      // packer checks) within the 1 mm edge margin of the strip.
+      const step = off > 0 ? -1 : 1
+      const tooClose = footprints(plate).some((o) => {
+        const xs = o.map((p) => p[0] + step), ys = o.map((p) => p[1])
+        const gap = Math.max(145 - Math.max(...xs), Math.min(...xs) - 251, 310 - Math.max(...ys), Math.min(...ys) - 326)
+        return gap < 1 - 0.01
+      })
+      expect(tooClose, `plate ${plate.index} is ${off.toFixed(1)} mm off centre`).toBe(true)
     }
   })
 
@@ -244,6 +254,21 @@ describe('packPlates', () => {
         })
       })
     }
+  })
+
+  // Reported: an L7 tower on the H2S couldn't be exported. The L7 box (299 mm deep, too wide to pass the reserved
+  // strip at the back sideways) fits in front of the strip only if it keeps the edge margin from it, not the
+  // 5 mm spacing parts keep from each other.
+  it('keeps the edge margin from reserved areas, so a part that just fits in front of one is placed', () => {
+    const strip: Point[] = [[172.3, 302], [232.5, 302], [232.5, 322], [172.3, 322]]
+    const printer = { ...H2S, excluded: [strip] }
+    const l7 = tower({ width: 'L', depth: 7, roof: 'grid', bottom: 'none', backbone: 'none', rows: [
+      { height: '1F', units: [drawer('L')] }, { height: '1F', units: [drawer('S'), drawer('S')] }, { height: '2F', units: [drawer('S'), drawer('S')] }] })
+    const lines = partsForTower(l7, { catalog: realCatalog, printer })
+
+    const plates = packPlates(lines, { catalog: realCatalog, printer, allowColourMixing: false, spacingMm: SPACING })
+
+    for (const plate of plates) for (const outline of footprints(plate)) expect(distance(outline, strip)).toBeGreaterThanOrEqual(0.99)
   })
 
   it('packs a smaller bed too, still keeping everything on it', () => {

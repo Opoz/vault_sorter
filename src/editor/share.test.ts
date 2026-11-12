@@ -54,4 +54,14 @@ describe('share links', () => {
     const broken = { ...bigLayout(), towers: [{ id: 'x', width: 'Q', depth: null, rows: 'oops' }] } as unknown as EditorLayout
     expect(decodeLayout(encodeLayout(broken))).toBeUndefined()
   })
+
+  // Progress is the sender's own; whoever opens the link starts fresh.
+  it('leaves print progress out of the link', () => {
+    const sent = bigLayout()
+    const withProgress = { ...sent, towers: sent.towers.map((t) => ({ ...t, printed: { 'A/Key.stl': 3 } })) }
+
+    const received = decodeLayout(encodeLayout(withProgress))!
+
+    for (const tower of received.towers) expect(tower.printed).toBeUndefined()
+  })
 })

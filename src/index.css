@@ -332,6 +332,13 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
 .parts table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.85rem; }
 .parts td { padding: 0.25rem 0; vertical-align: top; border-top: 1px solid rgb(185 188 184 / 0.5); }
 .parts td.qty { width: 2.5rem; color: var(--ink-soft); }
+.parts td.printed-count { width: 5.5rem; text-align: right; white-space: nowrap; }
+.parts tr.is-printed td:not(.printed-count) { color: var(--ink-soft); }
+.counter { display: inline-flex; align-items: center; gap: 0.3rem; font-variant-numeric: normal; }
+.counter button { width: 1.4rem; height: 1.4rem; padding: 0; line-height: 1; border-radius: 4px; }
+.counter span { min-width: 2.2rem; text-align: center; font-size: 0.8rem; }
+.print-progress { width: 100%; height: 8px; accent-color: var(--ok, #2e7d4f); }
+.plate-list ul { list-style: none; margin: 0.4rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.85rem; }
 .swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.4rem; vertical-align: -1px; box-shadow: inset 0 0 0 1px rgb(36 39 42 / 0.3); }
 .swatch-body { background: var(--swatch-body, var(--line)); }
 .swatch-accent { background: var(--swatch-accent, var(--ink)); }

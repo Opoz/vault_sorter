@@ -1,7 +1,7 @@
 /**
  * Share links: a whole Layout packed into the link itself (compressed JSON, base64url), so nothing is stored on a
- * server. Opening a link gives the receiver a copy under a new id; the printer isn't included, as each person
- * picks their own.
+ * server. Opening a link gives the receiver a copy under a new id; the printer and print progress aren't
+ * included, as they're each person's own.
  */
 import { deflateSync, inflateSync, strFromU8, strToU8 } from 'fflate'
 import { HEIGHTS, WIDTHS } from '../engine/model'
@@ -11,7 +11,9 @@ import { upgradeLayout } from './storage'
 const VERSION = '1'
 
 export function encodeLayout(layout: EditorLayout): string {
-  const { id: _id, updatedAt: _updatedAt, ...shared } = layout
+  const { id: _id, updatedAt: _updatedAt, ...rest } = layout
+  // Print progress is the sender's own: whoever opens the link starts fresh.
+  const shared = { ...rest, towers: rest.towers.map(({ printed: _printed, ...tower }) => tower) }
   return `${VERSION}.${toBase64Url(deflateSync(strToU8(JSON.stringify(shared)), { level: 9 }))}`
 }
 

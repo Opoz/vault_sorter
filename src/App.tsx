@@ -91,13 +91,21 @@ export default function App() {
   const { ref: canvasRef, scale } = useCanvasScale(layout)
   const [dropNotice, setDropNotice] = useState<DropNotice | null>(null)
 
-  // Opening a share link (#share=…): import it once, then take it out of the address so a reload doesn't again.
+  // Opening a share link (#share=…), on load or pasted into a tab already open: import it once, then take it out
+  // of the address so a reload doesn't import it again.
+  const openShared = useRef(editor.openShared)
+  useEffect(() => { openShared.current = editor.openShared })
   useEffect(() => {
-    const match = window.location.hash.match(/^#share=(.+)$/)
-    if (!match) return
-    window.history.replaceState(null, '', window.location.pathname + window.location.search)
-    editor.openShared(match[1])
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    const check = () => {
+      const match = window.location.hash.match(/^#share=(.+)$/)
+      if (!match) return
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+      openShared.current(match[1])
+    }
+    check()
+    window.addEventListener('hashchange', check)
+    return () => window.removeEventListener('hashchange', check)
+  }, [])
 
   useEffect(() => {
     if (!dropNotice) return

@@ -6,6 +6,7 @@ import type {
   Baseplate, Bottom, Depth, DrawerUnit, Height, RoofType, SustainerUnit, Tower, Unit, Width,
 } from '../engine/model'
 import { DEFAULT_EDGE_MARGIN_MM, type Density } from '../engine/plates'
+import type { Printed } from '../engine/progress'
 
 export interface EditorDrawer extends DrawerUnit { readonly id: string }
 export interface EditorSustainer extends SustainerUnit { readonly id: string }
@@ -27,6 +28,8 @@ export interface EditorTower {
   readonly roof: RoofType
   readonly bottom: Bottom
   readonly backbone: Tower['backbone']
+  /** How many of each part file have been printed so far (print progress); absent until something is. */
+  readonly printed?: Printed
 }
 
 /** One colour per Colour role. */
@@ -217,6 +220,19 @@ export function updateTower(layout: EditorLayout, towerId: string, patch: TowerP
     // An under-table tower hangs from its roof, so it can't stand on wheels, feet or casters.
     if (next.roof === 'under table mount') return { ...next, bottom: 'none' }
     return next
+  })
+}
+
+/** Add (or, with negative numbers, take away) printed parts for a Tower. Counts never go below zero. */
+export function changePrinted(layout: EditorLayout, towerId: string, delta: Readonly<Record<string, number>>): OpResult {
+  return withTower(layout, towerId, (tower) => {
+    const printed: Record<string, number> = { ...tower.printed }
+    for (const [path, d] of Object.entries(delta)) {
+      const n = Math.max(0, (printed[path] ?? 0) + d)
+      if (n > 0) printed[path] = n
+      else delete printed[path]
+    }
+    return { ...tower, printed }
   })
 }
 
