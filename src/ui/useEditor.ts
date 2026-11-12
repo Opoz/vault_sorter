@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { addTower, duplicateUnit as copyUnit, newLayout, type EditorLayout, type OpResult } from '../editor/layoutOps'
+import { decodeLayout, encodeLayout } from '../editor/share'
 import { createLayoutStore, type KeyValueStorage } from '../editor/storage'
 import { DEFAULT_PRINTER_ID, findPrinter, type Printer } from './data'
 
@@ -98,6 +99,26 @@ export function useEditor() {
       const result = copyUnit(layout, towerId, unitId)
       if (!apply(result) || !result.ok) return
       if (rowsIn(result.layout) > rowsIn(layout)) setNotice('No room beside it, so the copy went in a new row above.')
+    },
+    /** A link that opens a copy of the current layout, for anyone. */
+    shareLink(): string {
+      return `${window.location.origin}${window.location.pathname}#share=${encodeLayout(layout)}`
+    },
+    /** Open the layout in a share link as a copy of one's own. */
+    openShared(code: string) {
+      const shared = decodeLayout(code)
+      if (!shared) {
+        setNotice("That share link couldn't be opened: it may have been cut short when it was copied.")
+        return
+      }
+      const name = `${shared.name} (shared)`
+      // Someone opening a link on their first visit shouldn't also be left with the empty starter layout.
+      const existing = store.list()
+      if (existing.length === 1 && existing[0].towers.every((t) => t.rows.length === 0)) store.remove(existing[0].id)
+      store.save({ ...shared, name })
+      refresh()
+      open(shared.id)
+      setNotice(`Opened "${name}" from a share link. It's your own copy: changes won't affect the sender's.`)
     },
     duplicate(id: string) {
       const copy = store.duplicate(id)

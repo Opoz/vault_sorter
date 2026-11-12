@@ -157,20 +157,26 @@ function RowView(props: {
           onSelect={onSelect}
         />
       ))}
-      {problem && (
-        <Slot towerId={towerId} rowId={row.id} widthPx={Math.max(towerWidthPx - usedPx, 24)} active={dragging}>
-          <span className="slot-text">{problem}</span>
-          {copyable && !dragging && (
-            <button
-              type="button"
-              className="slot-copy"
-              onClick={(e) => { e.stopPropagation(); onDuplicate(towerId, copyable.id) }}
-            >
-              + Copy the {copyable.width} {copyable.kind}
-            </button>
-          )}
-        </Slot>
-      )}
+      {problem && (() => {
+        // A short row (zoomed out, or 1F) has room for the copy button or the text, not both: the text then
+        // shows on hover and is read out.
+        const roomy = rowHeightMm(row.height) * scale >= 64
+        return (
+          <Slot towerId={towerId} rowId={row.id} widthPx={Math.max(towerWidthPx - usedPx, 24)} active={dragging} title={problem}>
+            <span className={roomy || !copyable || dragging ? 'slot-text' : 'sr-only'}>{problem}</span>
+            {copyable && !dragging && (
+              <button
+                type="button"
+                className="slot-copy"
+                aria-label={`Copy the ${copyable.width} ${copyable.kind} into this row`}
+                onClick={(e) => { e.stopPropagation(); onDuplicate(towerId, copyable.id) }}
+              >
+                {roomy ? `+ Copy the ${copyable.width} ${copyable.kind}` : `+ Copy ${copyable.width}`}
+              </button>
+            )}
+          </Slot>
+        )
+      })()}
       <span className="sr-only">Row {rowIndex + 1}</span>
     </div>
   )
@@ -219,12 +225,12 @@ function Gap({ towerId, index, active, top }: { towerId: string; index: number; 
   )
 }
 
-function Slot({ towerId, rowId, widthPx, active, children }: {
-  towerId: string; rowId: string; widthPx: number; active: boolean; children: ReactNode
+function Slot({ towerId, rowId, widthPx, active, title, children }: {
+  towerId: string; rowId: string; widthPx: number; active: boolean; title?: string; children: ReactNode
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `slot:${rowId}`, data: { type: 'slot', towerId, rowId } })
   return (
-    <div ref={setNodeRef} className={`slot${active ? ' is-active' : ''}${isOver ? ' is-over' : ''}`} style={{ width: widthPx }}>
+    <div ref={setNodeRef} className={`slot${active ? ' is-active' : ''}${isOver ? ' is-over' : ''}`} style={{ width: widthPx }} title={title}>
       {children}
     </div>
   )

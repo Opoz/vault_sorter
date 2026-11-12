@@ -27,7 +27,8 @@ export function UnitBlock({ kind, width, height, colours, scale, selected, label
   const w = WIDTH_MM[width]
   const h = rowHeightMm(height)
   const detailed = scale >= 0.3
-  const showText = label && scale >= 0.45
+  // Below this the size code no longer fits its pill.
+  const showText = label && scale >= 0.6
   const mm = (n: number) => `${n * scale}px`
   const sizeCode = `${width} ${height}`
   const style = {

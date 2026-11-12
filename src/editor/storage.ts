@@ -24,7 +24,7 @@ const PREFIX = 'vault-planner:layout:'
 const SCHEMA = 1
 
 /** Bring a layout saved by any earlier version up to the current shape. */
-function upgrade(raw: unknown): EditorLayout | undefined {
+export function upgradeLayout(raw: unknown): EditorLayout | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const data = raw as Record<string, unknown>
   if (typeof data.id !== 'string' || typeof data.name !== 'string' || !Array.isArray(data.towers)) return undefined
@@ -55,7 +55,7 @@ export function createLayoutStore(storage: KeyValueStorage): LayoutStore {
       if (!key?.startsWith(PREFIX)) continue
       try {
         const parsed = JSON.parse(storage.getItem(key) ?? '')
-        const layout = upgrade(parsed?.schema === SCHEMA ? parsed.layout : parsed)
+        const layout = upgradeLayout(parsed?.schema === SCHEMA ? parsed.layout : parsed)
         if (layout) memory.set(layout.id, layout)
         else unreadable.push(key)
       } catch {

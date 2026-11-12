@@ -14,7 +14,7 @@ import {
 } from './editor/layoutOps'
 import { HEIGHTS, WIDTHS, type Depth, type Unit } from './engine/model'
 import { catalog, printerLabel, printers, printerSource } from './ui/data'
-import { belowBaseMm, HANDLE_MM, towerHeightMm, WIDTH_MM } from './ui/dims'
+import { belowBaseMm, HANDLE_MM, towerHeightMm, TYRE_WIDTH_MM, WIDTH_MM } from './ui/dims'
 import { Inspector, type TowerInfo } from './ui/Inspector'
 import { Palette, PALETTE_SCALE } from './ui/Palette'
 import { TowerView } from './ui/TowerView'
@@ -38,14 +38,17 @@ function useCanvasScale(layout: EditorLayout) {
   }, [])
   const tallest = Math.max(400, ...layout.towers.map((t) =>
     towerHeightMm(t.rows, t.roof, t.bottom !== 'none') + belowBaseMm(t.bottom) + (t.roof === 'grid' ? HANDLE_MM.height : 0)))
-  const across = layout.towers.reduce((sum, t) => sum + (t.width ? WIDTH_MM[t.width] : 250), 0) + 250
-  const gaps = (layout.towers.length + 1) * 70
+  // Each tower's width, plus the wheels standing beside it; the extra 250 mm is the "Add a tower" spot.
+  const across = layout.towers.reduce((sum, t) =>
+    sum + (t.width ? WIDTH_MM[t.width] : 250) + (t.bottom === 'wheels' ? 2 * (TYRE_WIDTH_MM + 4) : 0), 0) + 250
+  const gaps = (layout.towers.length + 1) * 80
   // Leave room for the drop gaps that open between rows during a drag, so the canvas never has to scroll then.
   const mostRows = Math.max(0, ...layout.towers.map((t) => t.rows.length))
   const fitHeight = Math.min(((size.height - 120 - 48 - mostRows * 14) * 0.85) / tallest, 1.4)
   const fitWidth = (size.width - gaps) / across
-  // Shrink to fit every tower across, but not below a readable size: past that, the canvas scrolls sideways.
-  return { ref, scale: Math.max(0.3, Math.min(fitHeight, Math.max(fitWidth, 0.9))) }
+  // Shrink to fit every tower across, but not below a readable size (an S drawer still about 65 px wide): past
+  // that, the canvas scrolls sideways.
+  return { ref, scale: Math.max(0.3, Math.min(fitHeight, Math.max(fitWidth, 0.4))) }
 }
 
 /**
@@ -87,6 +90,14 @@ export default function App() {
   const paletteFit = useMemo(() => unitFitByPrinter(printer, layout.splitParts), [printer, layout.splitParts])
   const { ref: canvasRef, scale } = useCanvasScale(layout)
   const [dropNotice, setDropNotice] = useState<DropNotice | null>(null)
+
+  // Opening a share link (#share=…): import it once, then take it out of the address so a reload doesn't again.
+  useEffect(() => {
+    const match = window.location.hash.match(/^#share=(.+)$/)
+    if (!match) return
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    editor.openShared(match[1])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!dropNotice) return
@@ -246,6 +257,7 @@ function TopBar({ editor }: { editor: Editor }) {
         </select>
         <button type="button" onClick={editor.create}>New layout</button>
         <button type="button" onClick={() => editor.duplicate(layout.id)}>Duplicate</button>
+        <button type="button" onClick={() => share(editor)}>Share</button>
         <button
           type="button"
           className="danger"
@@ -264,6 +276,17 @@ function TopBar({ editor }: { editor: Editor }) {
       </label>
     </header>
   )
+}
+
+/** Copy a link to the current layout; if the browser won't allow copying, show the link to copy by hand. */
+async function share(editor: Editor) {
+  const link = editor.shareLink()
+  try {
+    await navigator.clipboard.writeText(link)
+    editor.setNotice(`Link to "${editor.layout.name}" copied. Anyone with it can open their own copy of this layout.`)
+  } catch {
+    window.prompt('Copy this link to share the layout:', link)
+  }
 }
 
 function Canvas({ canvasRef, active, hint, onClickEmpty, children }: {
