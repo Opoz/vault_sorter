@@ -108,6 +108,9 @@ export default function App() {
   )
 
   const info = useMemo(() => towerInfo(layout, printer), [layout, printer])
+  // Incomplete towers: whether the units placed so far fit, so a misfit shows before the last gap is filled.
+  const partial = useMemo(() => new Map(layout.towers.filter((t) => !info.get(t.id)?.choice)
+    .flatMap((t) => { const why = partialFit(t, printer, layout.splitParts); return why ? [[t.id, why] as const] : [] })), [layout, printer, info])
   const paletteFit = useMemo(() => unitFitByPrinter(printer, layout.splitParts), [printer, layout.splitParts])
   const { ref: canvasRef, scale } = useCanvasScale(layout)
   const [dropNotice, setDropNotice] = useState<DropNotice | null>(null)
@@ -230,8 +233,8 @@ export default function App() {
                     scale={scale}
                     depth={t?.depth}
                     heightMm={t?.dimensions?.heightMm}
-                    fitState={fitState(t)}
-                    fitWhy={fitState(t) === 'none' ? fitWhy(tower, t, printer, layout.splitParts) : undefined}
+                    fitState={fitState(t) === 'incomplete' && partial.get(tower.id) ? 'none' : fitState(t)}
+                    fitWhy={fitState(t) === 'none' ? fitWhy(tower, t, printer, layout.splitParts) : partial.get(tower.id)}
                     selection={editor.selection}
                     dragging={dragging !== null}
                     onSelect={editor.setSelection}
@@ -475,6 +478,41 @@ function fitWhy(tower: EditorTower, t: TowerInfo | undefined, printer: Editor['p
   const worst = option.blockers[0]
   const more = option.blockers.length - 1
   return { summary: `${reason(worst)}${more > 0 ? `, and ${more} more` : ''}`, units }
+}
+
+/**
+ * For a Tower that isn't finished yet (a Row still has a gap): whether the Units already placed fit the printer,
+ * each checked on its own. It doesn't fit when no depth fits them all, or the chosen depth doesn't. The roof and
+ * base are only checked once the Tower is complete.
+ */
+function partialFit(tower: EditorTower, printer: Editor['printer'], splitParts: EditorLayout['splitParts']): FitWhy | undefined {
+  const units = tower.rows.flatMap((r) => r.columns.flatMap((c) => c.units))
+  if (!tower.width || units.length === 0) return undefined
+  const options = { catalog, printer, splitParts }
+  const perUnit = units.map((unit) => ({
+    unit,
+    choice: depthOptions({ width: unit.width, roof: 'none', bottom: 'none', backbone: 'none', rows: [{ height: unit.height, units: [unit] }] }, options),
+  }))
+  const depths = perUnit[0].choice.options.map((o) => o.depth)
+  const fitsAll = (depth: Depth) => perUnit.every(({ choice }) => choice.options.find((o) => o.depth === depth)?.fits)
+  if (tower.depth ? fitsAll(tower.depth) : depths.some(fitsAll)) return undefined
+  // Explain at the chosen depth, or the shallowest one.
+  const depth = tower.depth ?? depths[0]
+  const blocked = new Map<string, string>()
+  const all: string[] = []
+  for (const { unit, choice } of perUnit) {
+    const option = choice.options.find((o) => o.depth === depth)
+    if (!option || option.fits) continue
+    const reasons = option.unavailable ? [option.unavailable] : option.blockers.map((b) =>
+      `${b.path.split('/').pop()!.replace(/\.stl$/i, '')}: ${b.fit.limitedBy === 'height' ? 'too tall' : 'too big'} by ${(-b.fit.spareMm).toFixed(1)} mm`)
+    blocked.set(unit.id, reasons.join('; '))
+    all.push(...reasons)
+  }
+  if (all.length === 0) {
+    // Each unit fits at some depth, but no single depth fits them all.
+    return { summary: 'No one depth fits all of these units', units: blocked }
+  }
+  return { summary: `${all[0]}${all.length > 1 ? `, and ${all.length - 1} more` : ''}`, units: blocked }
 }
 
 function fitState(t: TowerInfo | undefined): 'fits' | 'tight' | 'none' | 'incomplete' {
