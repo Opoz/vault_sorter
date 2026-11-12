@@ -6,6 +6,7 @@ import {
   type EditorUnit,
 } from '../editor/layoutOps'
 import type { Width } from '../engine/model'
+import { topHandleCount } from '../engine/parts'
 import { BASE_MM, belowBaseMm, CASTER, FEET_INSET_MM, FOOT_MM, HANDLE_MM, HEAVYWEIGHT_HANDLE_MM, PULL_OUT, LIP_MM, ROOF_MM, towerHeightMm, TYRE_WIDTH_MM, WHEEL_MM, WIDTH_MM, floorsHeightMm, FLOOR_MM } from './dims'
 import { describe } from './text'
 import { UnitBlock } from './UnitBlock'
@@ -34,6 +35,7 @@ interface Props {
 
 export function TowerView(props: Props) {
   const { tower, index, colours, scale, depth, heightMm: measuredHeight, fitState, selection, dragging, onSelect, dragWidth } = props
+  const handles = tower.width ? topHandleCount({ width: tower.width, roof: tower.roof, topHandles: tower.topHandles }) : 0
   const width = tower.width
   const problems = rowProblems(tower)
   const isSelected = selection?.type === 'tower' && selection.towerId === tower.id
@@ -74,7 +76,7 @@ export function TowerView(props: Props) {
             className="tower-stack"
             style={{
               // Room above the roof for its handle, unless the pull-out handle (taller) already makes room.
-              paddingTop: tower.roof === 'grid' && !tower.pullOutHandle ? HANDLE_MM.height * scale : undefined,
+              paddingTop: handles > 0 && !tower.pullOutHandle ? HANDLE_MM.height * scale : undefined,
               paddingBottom: belowBaseMm(tower.bottom) * scale || undefined,
               // Wheels stand outside the base: keep their width free on both sides.
               marginInline: tower.bottom === 'wheels' ? (TYRE_WIDTH_MM + 4) * scale : undefined,
@@ -88,18 +90,21 @@ export function TowerView(props: Props) {
                 title={`${tower.roof} roof`}
               >
                 {tower.roof === 'heavyweight' && width && <HeavyweightRoof towerMm={WIDTH_MM[width]} scale={scale} />}
-                {tower.roof === 'grid' && (
+                {/* Spread evenly across the roof, each centred in its share of the width. */}
+                {Array.from({ length: handles }, (_, i) => (
                   <span
+                    key={i}
                     className="top-handle"
                     title="Top handle"
                     style={{
+                      left: `${((i + 0.5) / handles) * 100}%`,
                       width: HANDLE_MM.length * scale,
                       height: HANDLE_MM.height * scale,
                       borderRadius: HANDLE_MM.corner * scale,
                       borderWidth: `${HANDLE_MM.top * scale}px ${HANDLE_MM.side * scale}px ${HANDLE_MM.bottom * scale}px`,
                     }}
                   />
-                )}
+                ))}
               </div>
             )}
             {tower.roof === 'under table mount' && <div className="tower-table" title="Under-table mount" />}

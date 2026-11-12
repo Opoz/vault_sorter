@@ -4,7 +4,7 @@ import type { Baseplate, Depth, RoofType, Width } from '../engine/model'
 import type { TowerDimensions } from '../engine/dimensions'
 import type { FilamentEstimate } from '../engine/filament'
 import type { HardwareLine } from '../engine/hardware'
-import type { ColourRole, Flag, PartLine } from '../engine/parts'
+import { maxTopHandles, type ColourRole, type Flag, type PartLine } from '../engine/parts'
 import { DENSITY_SPACING_MM, SMALL_PART_EDGE_MM, type Density } from '../engine/plates'
 import { partProgress, type Printed } from '../engine/progress'
 import {
@@ -111,7 +111,7 @@ function UnitPanel({ editor, tower, unit, height }: { editor: Editor; tower: Edi
 }
 
 const ROOFS: { value: RoofType; label: string }[] = [
-  { value: 'grid', label: 'Grid (with top handle)' },
+  { value: 'grid', label: 'Grid' },
   { value: 'table', label: 'Table' },
   { value: 'heavyweight', label: 'Heavyweight' },
   { value: 'bowl', label: 'Bowl' },
@@ -159,6 +159,21 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
           </option>)}
         </select>
       </Field>
+      {tower.roof === 'grid' && tower.width && (
+        <Field
+          label="Top handles"
+          why={maxTopHandles(tower.width) === 1 ? `Only one 126 mm handle fits across an ${tower.width} roof.` : undefined}
+        >
+          <select
+            value={Math.min(tower.topHandles ?? 1, maxTopHandles(tower.width))}
+            onChange={(e) => set({ topHandles: Number(e.target.value) })}
+          >
+            {Array.from({ length: maxTopHandles(tower.width) + 1 }, (_, n) => (
+              <option key={n} value={n}>{n === 0 ? 'None' : n === 1 ? 'One' : `${n}, spaced across the roof`}</option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field
         label="Bottom"
         why={tower.roof === 'under table mount'

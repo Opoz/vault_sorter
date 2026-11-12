@@ -41,6 +41,8 @@ describe('hardwareForTower', () => {
   // p3/p18: the top handle on a grid roof takes two M6 50 mm bolts.
   it('adds the top handle bolts for a grid roof', () => {
     expect(qty(hardwareForTower(tower({ roof: 'grid' })), 'M6 × 50 mm bolt')).toBe(2)
+    expect(qty(hardwareForTower(tower({ width: 'L', roof: 'grid', topHandles: 2, rows: [{ height: '1F', units: [drawer('L')] }] })), 'M6 × 50 mm bolt')).toBe(4)
+    expect(qty(hardwareForTower(tower({ roof: 'grid', topHandles: 0 })), 'M6 × 50 mm bolt')).toBeUndefined()
   })
 
   // p3 and Modifications p2: a 414 mm M16 rod for an L base; per wheel 6× M4 25 mm, a 6205ZZ bearing, a stopper;

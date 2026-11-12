@@ -83,6 +83,8 @@ export interface Tower {
   readonly pullOutHandle?: boolean
   /** Pegboard boards on the backbone, for IKEA Skadis or USSA pegboard accessories (Modifications p15). */
   readonly pegboard?: 'skadis' | 'ussa'
+  /** How many Top Handles sit on a grid roof (default 1, as in Instructions Manual p18). */
+  readonly topHandles?: number
   /** Hung on a wall by mounts on the back of each module (Mounting Instructions pp1–9). */
   readonly wallMount?: boolean
 }

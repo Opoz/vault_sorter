@@ -119,6 +119,21 @@ const ROOF_FILE: Record<Exclude<RoofType, 'none' | 'heavyweight'>, string> = {
   grid: 'grid roof', table: 'table roof', bowl: 'bowl roof', 'under table mount': 'under table mount roof',
 }
 
+/**
+ * How many Top Handles fit side by side across a grid roof: each is 126 mm long (measured), with 10 mm between
+ * them, on roofs S 164.8, M 254, L 329.6, XL 418.8 mm wide. The handle bolts through the grid ribs (Instructions
+ * Manual p18), so it isn't tied to set holes; more than one is inferred, as the manual only shows one.
+ */
+export function maxTopHandles(width: Width): number {
+  return { S: 1, M: 1, L: 2, XL: 3 }[width]
+}
+
+/** The Top Handles a Tower gets: on a grid roof only, as many as chosen (default 1), up to what fits. */
+export function topHandleCount(tower: Pick<Tower, 'width' | 'roof' | 'topHandles'>): number {
+  if (tower.roof !== 'grid') return 0
+  return Math.max(0, Math.min(tower.topHandles ?? 1, maxTopHandles(tower.width)))
+}
+
 // Instructions Manual p10 (five roof types) and p18 (top handle on the grid roof).
 function roofParts(tower: Tower, resolver: Resolver): Want[] {
   const { width: w, depth, roof } = tower
@@ -126,7 +141,15 @@ function roofParts(tower: Tower, resolver: Resolver): Want[] {
   const dir = `${DRAWERS}/${w} families/${w}${depth}/roof`
   if (roof !== 'heavyweight') {
     const wants: Want[] = [{ tidyPath: `${dir}/${w}${depth} ${ROOF_FILE[roof]}.stl`, qty: 1, role: 'body' }]
-    if (roof === 'grid') wants.push({ tidyPath: `${UNIVERSAL}/top handle.stl`, qty: 1, role: 'secondary' })
+    const handles = topHandleCount(tower)
+    if (handles > 0) {
+      wants.push({
+        tidyPath: `${UNIVERSAL}/top handle.stl`, qty: handles, role: 'secondary',
+        flags: handles > 1
+          ? [{ kind: 'inferred', note: `${handles} top handles on one roof: the manual only shows one, but the handle bolts through the grid anywhere.`, source: 'Instructions Manual p18' }]
+          : undefined,
+      })
+    }
     return wants
   }
   const handleFlag: Flag = {

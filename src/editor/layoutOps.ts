@@ -62,6 +62,8 @@ export interface EditorTower {
   readonly pullOutHandle?: boolean
   readonly pegboard?: 'skadis' | 'ussa'
   readonly wallMount?: boolean
+  /** Top Handles on a grid roof; absent means 1. */
+  readonly topHandles?: number
   /** How many of each part file have been printed so far (print progress); absent until something is. */
   readonly printed?: Printed
 }
@@ -311,7 +313,7 @@ export function setTowerWidth(layout: EditorLayout, towerId: string, width: Widt
 }
 
 export type TowerPatch = Partial<Pick<EditorTower,
-  'depth' | 'roof' | 'bottom' | 'backbone' | 'stationaryHandle' | 'pullOutHandle' | 'pegboard' | 'wallMount'>>
+  'depth' | 'roof' | 'bottom' | 'backbone' | 'stationaryHandle' | 'pullOutHandle' | 'pegboard' | 'wallMount' | 'topHandles'>>
 
 /**
  * Change a Tower's settings. Settings the change rules out are cleared rather than refused, so picking an option
@@ -411,5 +413,6 @@ export function toEngineTower(tower: EditorTower, depth: Depth): Tower | null {
     pullOutHandle: tower.pullOutHandle ?? false,
     pegboard: tower.pegboard,
     wallMount: tower.wallMount ?? false,
+    topHandles: tower.topHandles,
   }
 }

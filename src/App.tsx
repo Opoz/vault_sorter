@@ -38,7 +38,7 @@ function useCanvasScale(layout: EditorLayout) {
   }, [])
   const tallest = Math.max(400, ...layout.towers.map((t) =>
     towerHeightMm(t.rows, t.roof, t.bottom !== 'none') + belowBaseMm(t.bottom) +
-      (t.pullOutHandle ? PULL_OUT.extendedMm : t.roof === 'grid' ? HANDLE_MM.height : 0)))
+      (t.pullOutHandle ? PULL_OUT.extendedMm : t.roof === 'grid' && t.topHandles !== 0 ? HANDLE_MM.height : 0)))
   // Each tower's width, plus the wheels standing beside it; the extra 250 mm is the "Add a tower" spot.
   const across = layout.towers.reduce((sum, t) =>
     sum + (t.width ? WIDTH_MM[t.width] : 250) + (t.bottom === 'wheels' ? 2 * (TYRE_WIDTH_MM + 4) : 0), 0) + 250

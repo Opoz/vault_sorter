@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Height, Tower, Unit } from './model'
-import { partsForTower, type PartLine, type PartsOptions } from './parts'
+import { maxTopHandles, partsForTower, type PartLine, type PartsOptions } from './parts'
 import { realCatalog } from './testing'
 
 const H2S = { name: 'Bambu Lab H2S', bed: { width: 340, depth: 320 }, height: 340 }
@@ -137,6 +137,22 @@ describe('partsForTower', () => {
       const p = parts({ roof: 'grid' })
       expect(p['M3 Grid Roof.stl']).toBe(1)
       expect(p['Top Handle (Turn On Supports).stl']).toBe(1)
+    })
+
+    // Issue #15: the handle bolts through the grid anywhere, so a wide roof can take more than one.
+    it('prints as many top handles as chosen, and none when none are', () => {
+      const lines = partsForTower(tower({ width: 'L', depth: 3, roof: 'grid', topHandles: 2, rows: [{ height: '1F', units: [drawer('L')] }] }), opts)
+      const handle = lines.find((l) => l.path.endsWith('Top Handle (Turn On Supports).stl'))
+      expect(handle?.qty).toBe(2)
+      expect(handle?.flags.some((f) => f.kind === 'inferred')).toBe(true)
+      expect(parts({ roof: 'grid', topHandles: 0 })['Top Handle (Turn On Supports).stl']).toBeUndefined()
+    })
+
+    it('limits top handles to what fits side by side across the roof', () => {
+      expect(maxTopHandles('S')).toBe(1)
+      expect(maxTopHandles('M')).toBe(1)
+      expect(maxTopHandles('L')).toBe(2)
+      expect(maxTopHandles('XL')).toBe(3)
     })
 
     // The full XL heavyweight roof fits no Bambu printer; the undocumented "Cut" version does.

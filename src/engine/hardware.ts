@@ -4,7 +4,7 @@
  * pages are flagged, never resolved silently.
  */
 import { FLOORS, rowFloors, unitsOf, type Tower, type Width } from './model'
-import { backPieces, type Flag } from './parts'
+import { backPieces, topHandleCount, type Flag } from './parts'
 
 export interface HardwareLine {
   readonly item: string
@@ -48,7 +48,8 @@ export function hardwareForTower(tower: Tower): HardwareLine[] {
     }
   }
 
-  if (tower.roof === 'grid') wants.push({ item: 'M6 × 50 mm bolt', qty: 2, source: 'Instructions Manual p3 and p18' })
+  const handles = topHandleCount(tower)
+  if (handles > 0) wants.push({ item: 'M6 × 50 mm bolt', qty: 2 * handles, source: 'Instructions Manual p3 and p18' })
   if (tower.roof === 'under table mount') {
     wants.push({
       item: 'Screws or thread inserts to fix the mount under the table',
