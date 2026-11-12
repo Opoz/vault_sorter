@@ -8,7 +8,7 @@ import type { ColourRole, Flag, PartLine } from '../engine/parts'
 import { DENSITY_SPACING_MM, SMALL_PART_EDGE_MM, type Density } from '../engine/plates'
 import { partProgress, type Printed } from '../engine/progress'
 import {
-  changePrinted, removeTower, removeUnit, rowProblems, setTowerWidth, toEngineTower, updateLayout, updateTower, updateUnit,
+  changePrinted, findUnit, removeTower, removeUnit, rowProblems, setTowerWidth, toEngineTower, updateLayout, updateTower, updateUnit,
   type Colours, type EditorLayout, type EditorTower, type EditorUnit,
 } from '../editor/layoutOps'
 import { depthMm } from './dims'
@@ -30,8 +30,7 @@ export interface TowerInfo {
 export function Inspector({ editor, info }: { editor: Editor; info: Map<string, TowerInfo> }) {
   const { layout, selection } = editor
   const tower = selection && layout.towers.find((t) => t.id === selection.towerId)
-  const row = selection?.type === 'unit' ? tower?.rows.find((r) => r.units.some((u) => u.id === selection.unitId)) : undefined
-  const unit = row?.units.find((u) => selection?.type === 'unit' && u.id === selection.unitId)
+  const unit = selection?.type === 'unit' && tower ? findUnit(tower, selection.unitId)?.unit : undefined
   const index = tower ? layout.towers.indexOf(tower) : -1
 
   // Where you are, with a way back up: Layout › Tower 2 › M 1F drawer.
@@ -42,11 +41,11 @@ export function Inspector({ editor, info }: { editor: Editor; info: Map<string, 
       {tower && (unit
         ? <button type="button" className="link" onClick={() => editor.setSelection({ type: 'tower', towerId: tower.id })}>Tower {index + 1}</button>
         : <span>Tower {index + 1}</span>)}
-      {unit && row && <><span aria-hidden="true">›</span><span>{describe(unit.kind, unit.width, row.height)}</span></>}
+      {unit && <><span aria-hidden="true">›</span><span>{describe(unit.kind, unit.width, unit.height)}</span></>}
     </nav>
   )
 
-  if (tower && unit && row) return <>{crumbs}<UnitPanel editor={editor} tower={tower} unit={unit} height={row.height} /></>
+  if (tower && unit) return <>{crumbs}<UnitPanel editor={editor} tower={tower} unit={unit} height={unit.height} /></>
   if (tower) return <>{crumbs}<TowerPanel editor={editor} tower={tower} info={info.get(tower.id) ?? {}} /></>
   return <LayoutPanel editor={editor} info={info} />
 }

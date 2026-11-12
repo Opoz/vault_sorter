@@ -3,7 +3,7 @@
  * overlap is not visible in the files, so anything that depends on it is flagged as inferred.
  */
 import type { PartMeasure, Point } from './catalog'
-import type { Height, Tower, Width } from './model'
+import { rowFloors, unitsOf, type Tower, type Width } from './model'
 import { partsForTower, type Flag, type PartsOptions } from './parts'
 
 // Measured from the Module files (scripts/measure): every module of a width is the same width, every module
@@ -12,7 +12,6 @@ export const MODULE_WIDTH_MM: Record<Width, number> = { S: 164.8, M: 254.0, L: 3
 export const moduleDepthMm = (depth: number) => 20.1 + 42 * depth
 export const FLOOR_PITCH_MM = 48
 export const LIP_MM = 9.01
-const FLOORS: Record<Height, number> = { '1F': 1, '2F': 2, '4F': 4 }
 
 export interface TowerDimensions {
   readonly widthMm: number
@@ -31,16 +30,16 @@ export function towerDimensions(tower: Tower, options: PartsOptions): TowerDimen
   const base = lines.find((l) => /\/Base\/[^/]+\/[^/]*Base( Whole| Part 1)?\.stl$/i.test(l.path))
   if (base) breakdown.push({ label: 'Base', mm: thickness(options.catalog.get(base.path)) })
 
-  const floors = tower.rows.reduce((n, r) => n + FLOORS[r.height], 0)
+  const floors = tower.rows.reduce((n, r) => n + rowFloors(r), 0)
   if (floors > 0) breakdown.push({ label: 'Modules', mm: floors * FLOOR_PITCH_MM + LIP_MM })
-  if (tower.rows.length > 1) {
+  if (tower.rows.length > 1 || tower.rows.some((r) => unitsOf(r).length > 2)) {
     flags.push({
       kind: 'inferred',
       note: 'Stacked modules are assumed to overlap by their 9.01 mm lip (48 mm per floor); not yet checked on a real stack.',
       source: 'Module measurements',
     })
   }
-  if (tower.rows.some((r) => r.units.some((u) => u.kind === 'sustainer'))) {
+  if (tower.rows.some((r) => unitsOf(r).some((u) => u.kind === 'sustainer'))) {
     flags.push({
       kind: 'inferred',
       note: "Sustainers are assumed to stack to the same height per floor as drawers; their module and lid don't add up to it directly.",

@@ -56,7 +56,14 @@ function useCanvasScale(layout: EditorLayout) {
  * Drop on whatever is under the pointer, most specific first: a gap, slot or button, then a tower's
  * column (adds on top), and the bare canvas (new tower) only when nothing else is there.
  */
-const dropRank = (id: string | number) => (id === 'canvas' ? 2 : String(id).startsWith('tower:') ? 1 : 0)
+const dropRank = (id: string | number) => {
+  const key = String(id)
+  if (key === 'canvas') return 3
+  if (key.startsWith('tower:')) return 2
+  // Stacking on a column beats starting a new row on the same seam.
+  if (key.startsWith('col:') || key.startsWith('colslot:')) return 0
+  return 1
+}
 const dropUnderPointer: CollisionDetection = (args) => {
   const hits = pointerWithin(args)
   if (hits.length === 0) return hits
@@ -75,6 +82,7 @@ type DragData =
 type DropData =
   | { type: 'gap'; towerId: string; index: number }
   | { type: 'slot'; towerId: string; rowId: string }
+  | { type: 'column'; towerId: string; rowId: string; columnId: string }
   | { type: 'newTower'; useEmptyTower?: boolean }
   | { type: 'trash' }
 
@@ -143,7 +151,9 @@ export default function App() {
       target = { kind: 'newRow', index: 0 }
     } else {
       towerId = drop.towerId
-      target = drop.type === 'gap' ? { kind: 'newRow', index: drop.index } : { kind: 'beside', rowId: drop.rowId }
+      target = drop.type === 'gap' ? { kind: 'newRow', index: drop.index }
+        : drop.type === 'column' ? { kind: 'onColumn', rowId: drop.rowId, columnId: drop.columnId }
+        : { kind: 'beside', rowId: drop.rowId }
     }
     const result = drag.type === 'palette'
       ? placeUnit(base, towerId, target, drag.spec)
@@ -207,6 +217,7 @@ export default function App() {
                     dragging={dragging !== null}
                     onSelect={editor.setSelection}
                     onDuplicate={editor.duplicateUnit}
+                    dragWidth={dragging && 'spec' in dragging ? dragging.spec.width : undefined}
                   />
                 )
               })}

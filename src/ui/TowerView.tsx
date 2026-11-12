@@ -1,8 +1,12 @@
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Depth } from '../engine/model'
-import { missingWidth, rowProblems, type Colours, type EditorRow, type EditorTower, type EditorUnit } from '../editor/layoutOps'
-import { BASE_MM, belowBaseMm, CASTER, FEET_INSET_MM, FOOT_MM, HANDLE_MM, HEAVYWEIGHT_HANDLE_MM, PULL_OUT, LIP_MM, ROOF_MM, towerHeightMm, TYRE_WIDTH_MM, WHEEL_MM, WIDTH_MM, rowHeightMm } from './dims'
+import {
+  columnShortfall, missingWidth, rowFloors, rowProblems, type Colours, type EditorColumn, type EditorRow, type EditorTower,
+  type EditorUnit,
+} from '../editor/layoutOps'
+import type { Width } from '../engine/model'
+import { BASE_MM, belowBaseMm, CASTER, FEET_INSET_MM, FOOT_MM, HANDLE_MM, HEAVYWEIGHT_HANDLE_MM, PULL_OUT, LIP_MM, ROOF_MM, towerHeightMm, TYRE_WIDTH_MM, WHEEL_MM, WIDTH_MM, floorsHeightMm, FLOOR_MM } from './dims'
 import { describe } from './text'
 import { UnitBlock } from './UnitBlock'
 import type { Selection } from './useEditor'
@@ -20,9 +24,11 @@ interface Props {
   dragging: boolean
   onSelect: (s: Selection) => void
   onDuplicate: (towerId: string, unitId: string) => void
+  /** Width of the unit being dragged, if any: columns of that width offer a spot on top. */
+  dragWidth?: Width
 }
 
-export function TowerView({ tower, index, colours, scale, depth, heightMm: measuredHeight, fitState, selection, dragging, onSelect, onDuplicate }: Props) {
+export function TowerView({ tower, index, colours, scale, depth, heightMm: measuredHeight, fitState, selection, dragging, onSelect, onDuplicate, dragWidth }: Props) {
   const width = tower.width
   const problems = rowProblems(tower)
   const isSelected = selection?.type === 'tower' && selection.towerId === tower.id
@@ -105,8 +111,9 @@ export function TowerView({ tower, index, colours, scale, depth, heightMm: measu
                   selection={selection}
                   dragging={dragging}
                   onSelect={onSelect}
-                  copyable={width && missingWidth(width, row) === row.units.at(-1)?.width ? row.units.at(-1) : undefined}
+                  copyable={width && missingWidth(width, row) === row.columns.at(-1)?.width ? row.columns.at(-1)?.units.at(-1) : undefined}
                   onDuplicate={onDuplicate}
+                  dragWidth={dragWidth}
                 />
                 <Gap towerId={tower.id} index={i} active={dragging} />
               </div>
@@ -191,27 +198,36 @@ function RowView(props: {
   /** Offered in the row's free space when a copy of its last unit would fill it. */
   copyable?: EditorUnit
   onDuplicate: (towerId: string, unitId: string) => void
+  dragWidth?: Width
 }) {
-  const { towerId, row, rowIndex, towerWidthPx, colours, scale, problem, selection, dragging, onSelect, copyable, onDuplicate } = props
-  const usedPx = row.units.reduce((sum, u) => sum + WIDTH_MM[u.width] * scale, 0)
+  const { towerId, row, rowIndex, towerWidthPx, colours, scale, problem, selection, dragging, onSelect, copyable, onDuplicate, dragWidth } = props
+  const usedPx = row.columns.reduce((sum, c) => sum + WIDTH_MM[c.width] * scale, 0)
+  const rowPx = floorsHeightMm(rowFloors(row)) * scale
+  const short = columnShortfall(row)
+  const missing = row.columns.length === 1 && problem !== undefined
   return (
-    <div className={`tower-row${problem ? ' is-incomplete' : ''}`} style={{ height: rowHeightMm(row.height) * scale }}>
-      {row.units.map((unit) => (
-        <PlacedUnit
-          key={unit.id}
+    <div className={`tower-row${problem ? ' is-incomplete' : ''}`} style={{ height: rowPx }}>
+      {row.columns.map((column, ci) => (
+        <ColumnView
+          key={column.id}
           towerId={towerId}
-          unit={unit}
-          height={row.height}
+          rowId={row.id}
+          column={column}
+          shortFloors={short[ci]}
+          split={row.columns.length > 1}
           colours={colours}
           scale={scale}
-          selected={selection?.type === 'unit' && selection.unitId === unit.id}
+          selection={selection}
+          dragging={dragging}
+          stackable={dragWidth === column.width}
           onSelect={onSelect}
+          onDuplicate={onDuplicate}
         />
       ))}
-      {problem && (() => {
+      {missing && (() => {
         // A short row (zoomed out, or 1F) has room for the copy button or the text, not both: the text then
         // shows on hover and is read out.
-        const roomy = rowHeightMm(row.height) * scale >= 64
+        const roomy = rowPx >= 64
         return (
           <Slot towerId={towerId} rowId={row.id} widthPx={Math.max(towerWidthPx - usedPx, 24)} active={dragging} title={problem}>
             <span className={roomy || !copyable || dragging ? 'slot-text' : 'sr-only'}>{problem}</span>
@@ -228,15 +244,91 @@ function RowView(props: {
           </Slot>
         )
       })()}
-      <span className="sr-only">Row {rowIndex + 1}</span>
+      <span className="sr-only">Row {rowIndex + 1}{problem ? `: ${problem}` : ''}</span>
     </div>
   )
+}
+
+/**
+ * One Column of a Row: its units stacked bottom first, each at its own height. A Column shorter than its
+ * neighbour shows the gap as a slot to drop into; in a split Row, a unit of the Column's width can also be
+ * dropped on top while dragging.
+ */
+function ColumnView(props: {
+  towerId: string
+  rowId: string
+  column: EditorColumn
+  shortFloors: number
+  split: boolean
+  colours: Colours
+  scale: number
+  selection: Selection
+  dragging: boolean
+  stackable: boolean
+  onSelect: (s: Selection) => void
+  onDuplicate: (towerId: string, unitId: string) => void
+}) {
+  const { towerId, rowId, column, shortFloors, split, colours, scale, selection, dragging, stackable, onSelect, onDuplicate } = props
+  const top = column.units.at(-1)
+  const copyFits = top && FLOORS_OF[top.height] <= shortFloors
+  return (
+    <div className="tower-column" style={{ width: WIDTH_MM[column.width] * scale }}>
+      {column.units.map((unit) => (
+        <PlacedUnit
+          key={unit.id}
+          towerId={towerId}
+          unit={unit}
+          height={unit.height}
+          colours={colours}
+          scale={scale}
+          selected={selection?.type === 'unit' && selection.unitId === unit.id}
+          onSelect={onSelect}
+        />
+      ))}
+      {shortFloors > 0 && (
+        <ColumnSlot towerId={towerId} rowId={rowId} columnId={column.id} heightPx={shortFloors * FLOOR_MM * scale} active={dragging}>
+          <span className={shortFloors * FLOOR_MM * scale >= 44 || !copyFits || dragging ? 'slot-text' : 'sr-only'}>Needs {shortFloors}F</span>
+          {copyFits && top && !dragging && (
+            <button
+              type="button"
+              className="slot-copy"
+              aria-label={`Copy the ${top.width} ${top.height} ${top.kind} onto this column`}
+              onClick={(e) => { e.stopPropagation(); onDuplicate(towerId, top.id) }}
+            >
+              + Copy {top.height}
+            </button>
+          )}
+        </ColumnSlot>
+      )}
+      {split && stackable && shortFloors === 0 && <ColumnTop towerId={towerId} rowId={rowId} columnId={column.id} />}
+    </div>
+  )
+}
+
+const FLOORS_OF = { '1F': 1, '2F': 2, '4F': 4 } as const
+
+/** The empty top of a short Column: drop a unit here to stack it. */
+function ColumnSlot({ towerId, rowId, columnId, heightPx, active, children }: {
+  towerId: string; rowId: string; columnId: string; heightPx: number; active: boolean; children: ReactNode
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `colslot:${columnId}`, data: { type: 'column', towerId, rowId, columnId } })
+  return (
+    <div ref={setNodeRef} className={`slot column-slot${active ? ' is-active' : ''}${isOver ? ' is-over' : ''}`} style={{ height: heightPx }} title="Drop a unit here to stack it">
+      {children}
+    </div>
+  )
+}
+
+/** While dragging a unit of this Column's width: a drop zone on the Column's top edge, to stack it there. */
+function ColumnTop({ towerId, rowId, columnId }: { towerId: string; rowId: string; columnId: string }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `col:${columnId}`, data: { type: 'column', towerId, rowId, columnId } })
+  return <div ref={setNodeRef} className={`column-top${isOver ? ' is-over' : ''}`}><span>Stack here</span></div>
 }
 
 function PlacedUnit(props: {
   towerId: string
   unit: EditorUnit
-  height: EditorRow['height']
+  height: EditorColumn['units'][number]['height']
   colours: Colours
   scale: number
   selected: boolean

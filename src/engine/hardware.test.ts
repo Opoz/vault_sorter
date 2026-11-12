@@ -94,4 +94,11 @@ describe('hardwareForTower', () => {
     const lines = hardwareForTower(tower({ backbone: 'matching', pegboard: 'ussa', rows: rowsOf(drawer('M'), '1F', '4F') }))
     expect(qty(lines, 'M4 × 40 mm bolt')).toBe(4 * 3)
   })
+
+  it('counts drawer bolts for each stacked unit at its own height', () => {
+    const unit = (height: '1F' | '2F' | '4F') => ({ ...drawer('S'), height })
+    const split = tower({ width: 'L', rows: [{ columns: [{ width: 'S', units: [unit('2F')] }, { width: 'S', units: [unit('1F'), unit('1F')] }] }] })
+    // p18: x6 for a 2F drawer, x4 for each 1F drawer.
+    expect(qty(hardwareForTower(split), 'M4 × 14 mm bolt')).toBe(6 + 4 + 4)
+  })
 })

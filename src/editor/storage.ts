@@ -33,6 +33,15 @@ export function upgradeLayout(raw: unknown): EditorLayout | undefined {
   const upgradedColours = colours && !colours.secondary
     ? { ...DEFAULT_COLOURS, body: colours.body ?? DEFAULT_COLOURS.body, secondary: colours.accent ?? DEFAULT_COLOURS.secondary }
     : colours ?? DEFAULT_COLOURS
+  // Before Columns, a Row was its Units side by side sharing one Height: each Unit becomes a Column of its own.
+  const towers = (data.towers as { rows?: unknown[] }[]).map((tower) => ({
+    ...tower,
+    rows: (tower.rows ?? []).map((row) => {
+      const r = row as { id: string; height?: string; units?: { width: string }[]; columns?: unknown }
+      if (r.columns || !r.units) return row
+      return { id: r.id, columns: r.units.map((u) => ({ id: crypto.randomUUID(), width: u.width, units: [{ ...u, height: r.height }] })) }
+    }),
+  }))
   return {
     splitParts: 'auto',
     allowColourMixing: false,
@@ -40,8 +49,9 @@ export function upgradeLayout(raw: unknown): EditorLayout | undefined {
     plateDensity: 'normal',
     updatedAt: 0,
     ...(data as object),
+    towers,
     colours: upgradedColours,
-  } as EditorLayout
+  } as unknown as EditorLayout
 }
 
 export function createLayoutStore(storage: KeyValueStorage): LayoutStore {

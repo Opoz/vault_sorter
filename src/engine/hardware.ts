@@ -3,8 +3,8 @@
  * hardware list (p3) and illustrations (pp17–19) and the Modifications manual; disagreements between
  * pages are flagged, never resolved silently.
  */
-import type { Height, Tower, Width } from './model'
-import type { Flag } from './parts'
+import { FLOORS, rowFloors, unitsOf, type Tower, type Width } from './model'
+import { backPieces, type Flag } from './parts'
 
 export interface HardwareLine {
   readonly item: string
@@ -15,7 +15,6 @@ export interface HardwareLine {
 }
 
 const ROD_MM: Record<Width, number> = { S: 248, M: 338, L: 414, XL: 504 }
-const FLOORS: Record<Height, number> = { '1F': 1, '2F': 2, '4F': 4 }
 
 interface Want { item: string; qty: number; source: string; flags?: Flag[] }
 
@@ -23,18 +22,18 @@ export function hardwareForTower(tower: Tower): HardwareLine[] {
   const wants: Want[] = []
 
   for (const row of tower.rows) {
-    for (const unit of row.units) {
+    for (const unit of unitsOf(row)) {
       if (unit.kind === 'drawer') {
         // p18: "x4 for 1F, x6 for 2F/4F"; p3: "x4 per floor".
-        const perPage18 = row.height === '1F' ? 4 : 6
-        const perPage3 = 4 * FLOORS[row.height]
+        const perPage18 = unit.height === '1F' ? 4 : 6
+        const perPage3 = 4 * FLOORS[unit.height]
         wants.push({
           item: 'M4 × 14 mm bolt',
           qty: perPage18,
           source: 'Instructions Manual p3 and p18',
           flags: perPage3 === perPage18 ? [] : [{
             kind: 'conflict',
-            note: `${row.height} drawer: ${perPage18} bolts per p18 ("x6 for 2F/4F"), but ${perPage3} per p3 ("x4 per floor").`,
+            note: `${unit.height} drawer: ${perPage18} bolts per p18 ("x6 for 2F/4F"), but ${perPage3} per p3 ("x4 per floor").`,
             source: 'Instructions Manual p3 and p18',
           }],
         })
@@ -94,8 +93,10 @@ export function hardwareForTower(tower: Tower): HardwareLine[] {
     })
   }
 
+  // Backbone and pegboard pieces across all Rows (see backPieces).
+  const pieces = tower.rows.reduce((n, r) => n + backPieces(tower.width, rowFloors(r)).reduce((m, p) => m + p.qty, 0), 0)
   if (tower.backbone !== 'none') {
-    const boards = tower.rows.reduce((n, r) => n + (r.height === '4F' ? 2 : 1), 0)
+    const boards = pieces
     wants.push({
       item: 'M4 × 60–100 mm bolt',
       qty: 4 * boards,
@@ -117,11 +118,10 @@ export function hardwareForTower(tower: Tower): HardwareLine[] {
     )
   }
   if (tower.pegboard) {
-    const boards = tower.rows.reduce((n, r) => n + (r.height === '4F' ? 2 : 1), 0)
-    wants.push({ item: 'M4 × 40 mm bolt', qty: 4 * boards, source: 'Instructions Manual p3' })
+    wants.push({ item: 'M4 × 40 mm bolt', qty: 4 * pieces, source: 'Instructions Manual p3' })
   }
   if (tower.wallMount) {
-    const units = tower.rows.reduce((n, r) => n + r.units.length, 0)
+    const units = tower.rows.reduce((n, r) => n + unitsOf(r).length, 0)
     wants.push({
       item: 'Wall screws (with anchors if needed) for the wall mount second parts', qty: units, source: 'Mounting Instructions p6',
       flags: [{ kind: 'inferred', note: 'The manual says to use anchors or wood screws to suit the wall, with no size or count; listed per second part.', source: 'Mounting Instructions p6' }],

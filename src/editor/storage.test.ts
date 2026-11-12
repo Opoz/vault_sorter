@@ -97,6 +97,21 @@ describe('layout storage', () => {
     expect(loaded.colours).toEqual({ body: '#111111', accent: DEFAULT_COLOURS.accent, secondary: '#222222' })
   })
 
+  // Before Columns, a Row was its Units side by side with one Height.
+  it('turns rows saved before columns into columns', () => {
+    const unit = { id: 'u1', kind: 'drawer', width: 'S', baseplate: 'none', gearedRails: false, key: 'normal' }
+    const old = { ...newLayout('Old rows'), id: 'rows', towers: [{
+      id: 't', width: 'L', depth: null, roof: 'grid', bottom: 'none', backbone: 'none',
+      rows: [{ id: 'r', height: '2F', units: [unit, { ...unit, id: 'u2' }] }],
+    }] }
+    const storage = memoryStorage({ 'vault-planner:layout:rows': JSON.stringify({ schema: 1, layout: old }) })
+
+    const row = createLayoutStore(storage).load('rows')!.towers[0].rows[0]
+
+    expect(row.id).toBe('r')
+    expect(row.columns.map((c) => [c.width, c.units.map((u) => [u.id, u.height])])).toEqual([['S', [['u1', '2F']]], ['S', [['u2', '2F']]]])
+  })
+
   it('keeps working in memory when the browser refuses storage, and says so', () => {
     const store = createLayoutStore(brokenStorage)
     const layout = newLayout('Private window')

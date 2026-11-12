@@ -1,3 +1,4 @@
+import { rowFloors, type EditorRow } from '../editor/layoutOps'
 /**
  * Real outside sizes, in mm, measured from the Vault STLs (scripts/measure). Used to draw Towers to scale.
  * Stacked height assumes modules overlap by their 9.01 mm lip: 48 mm per floor (inferred, see GLOSSARY Height).
@@ -47,9 +48,14 @@ export const HANDLE_MM = { length: 126, height: 51, top: 13, side: 22, bottom: 1
 export const FOOT_MM = 60.5
 
 export const rowHeightMm = (h: Height) => FLOORS[h] * FLOOR_PITCH_MM
+/** Drawn height of one floor. */
+export const FLOOR_MM = FLOOR_PITCH_MM
 
-export function towerHeightMm(rows: readonly { height: Height }[], roof: RoofType, hasBase: boolean): number {
+/** Drawn height of a Row this many floors high (48 mm a floor; the lip is added once, at the bottom). */
+export const floorsHeightMm = (floors: number) => floors * FLOOR_PITCH_MM
+
+export function towerHeightMm(rows: readonly EditorRow[], roof: RoofType, hasBase: boolean): number {
   if (rows.length === 0) return 0
-  const modules = rows.reduce((sum, r) => sum + rowHeightMm(r.height), 0) + LIP_MM
+  const modules = rows.reduce((sum, r) => sum + floorsHeightMm(rowFloors(r)), 0) + LIP_MM
   return modules + ROOF_MM[roof] + (hasBase ? BASE_MM : 0)
 }

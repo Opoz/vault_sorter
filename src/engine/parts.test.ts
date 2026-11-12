@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Tower, Unit } from './model'
+import type { Height, Tower, Unit } from './model'
 import { partsForTower, type PartLine, type PartsOptions } from './parts'
 import { realCatalog } from './testing'
 
@@ -76,7 +76,7 @@ describe('partsForTower', () => {
   describe('sustainers', () => {
     const sustainer = (width: Unit['width'], moduleType: 'flat' | 'dividers' | 'sealed' = 'flat'): Unit =>
       ({ kind: 'sustainer', width, moduleType })
-    const one = (unit: Unit, height: Tower['rows'][number]['height'], depth: Tower['depth'] = 3, o = opts) =>
+    const one = (unit: Unit, height: Height, depth: Tower['depth'] = 3, o = opts) =>
       byFile(partsForTower(tower({ width: unit.width, depth, rows: [{ height, units: [unit] }] }), o))
 
     // Instructions Manual p12 ("Sustainers Naming") and p17 (two hinges, two locks per module).
@@ -127,7 +127,7 @@ describe('partsForTower', () => {
   })
 
   describe('tower parts', () => {
-    const rows = (...heights: Tower['rows'][number]['height'][]) =>
+    const rows = (...heights: Height[]) =>
       heights.map((height) => ({ height, units: [drawer('M')] }))
     const parts = (t: Partial<Tower>) =>
       byFile(partsForTower(tower({ width: 'M', depth: 3, rows: rows('1F'), ...t }), opts))
@@ -263,6 +263,34 @@ describe('partsForTower', () => {
     it('refuses a wall-mounted tower that also has a backbone or stands on a base', () => {
       expect(() => back({ wallMount: true, backbone: 'matching' })).toThrow(/wall/i)
       expect(() => back({ wallMount: true, bottom: 'wheels' })).toThrow(/wall/i)
+    })
+  })
+
+  // Modules only connect at their top, so a split Row's two Columns need only reach the same height (GLOSSARY).
+  describe('split rows', () => {
+    const d = (width: Unit['width'], height: '1F' | '2F' | '4F') => ({ ...drawer(width), height })
+    const split: Tower['rows'][number] = {
+      columns: [
+        { width: 'S', units: [d('S', '4F'), d('S', '1F')] },
+        { width: 'S', units: [d('S', '2F'), d('S', '1F'), d('S', '2F')] },
+      ],
+    }
+
+    it('counts each stacked unit at its own height', () => {
+      const parts = byFile(partsForTower(tower({ width: 'L', depth: 3, rows: [split] }), opts))
+      expect(parts).toMatchObject({ 'S3 Module 4f.stl': 1, 'S3 Module 1F.stl': 2, 'S3 Module 2F.stl': 2 })
+    })
+
+    it('refuses columns that do not reach the same height', () => {
+      const short = { columns: [split.columns[0], { width: 'S' as const, units: [d('S', '2F'), d('S', '1F')] }] }
+      expect(() => partsForTower(tower({ width: 'L', depth: 3, rows: [short] }), opts)).toThrow(/5F.*3F|same height/)
+    })
+
+    it('makes a backbone across a 5F row from 2F, 2F and 1F pieces, and says so', () => {
+      const lines = partsForTower(tower({ width: 'L', depth: 3, backbone: 'matching', rows: [split] }), opts)
+      const parts = byFile(lines)
+      expect([parts['L2F Backbone.stl'], parts['L1F Backbone.stl']]).toEqual([2, 1])
+      expect(lines.find((l) => l.path.endsWith('L2F Backbone.stl'))!.flags.some((f) => f.kind === 'inferred')).toBe(true)
     })
   })
 })

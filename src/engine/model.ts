@@ -27,11 +27,44 @@ export interface SustainerUnit {
 
 export type Unit = DrawerUnit | SustainerUnit
 
-/** One horizontal layer of a Tower. Every Unit in it shares the Row's Height. */
-export interface Row {
+/** Floors in each Height. */
+export const FLOORS: Record<Height, number> = { '1F': 1, '2F': 2, '4F': 4 }
+
+/** A Unit with its own Height, as stacked in a Column. */
+export type StackedUnit = Unit & { readonly height: Height }
+
+/** One side of a split Row: Units of one Width stacked bottom first, any mix of Heights (GLOSSARY: Column). */
+export interface Column {
+  readonly width: Width
+  readonly units: readonly StackedUnit[]
+}
+
+/** A Row whose Units sit side by side, all one Height. */
+export interface UniformRow {
   readonly height: Height
   readonly units: readonly Unit[]
 }
+
+/** A Row of two Columns that need only reach the same height. */
+export interface SplitRow {
+  readonly columns: readonly Column[]
+}
+
+/** One horizontal layer of a Tower (GLOSSARY: Row). */
+export type Row = UniformRow | SplitRow
+
+/** A Row as Columns: a uniform Row is one Column per Unit, each a single Unit. */
+export function columnsOf(row: Row): Column[] {
+  return 'columns' in row ? [...row.columns] : row.units.map((u) => ({ width: u.width, units: [{ ...u, height: row.height }] }))
+}
+
+export const columnFloors = (column: Column) => column.units.reduce((n, u) => n + FLOORS[u.height], 0)
+
+/** How many floors high a Row is: as high as its tallest Column (a finished Row's Columns are all equal). */
+export const rowFloors = (row: Row) => Math.max(0, ...columnsOf(row).map(columnFloors))
+
+/** Every Unit of a Row with its Height, Column by Column, bottom first. */
+export const unitsOf = (row: Row): StackedUnit[] => columnsOf(row).flatMap((c) => c.units)
 
 export type RoofType = 'none' | 'grid' | 'table' | 'heavyweight' | 'bowl' | 'under table mount'
 export type Bottom = 'none' | 'feet' | 'wheels' | 'casters'

@@ -1,6 +1,6 @@
 import type { Catalog } from './catalog'
 import { checkFit, type PrinterBed } from './fit'
-import type { DrawerUnit, RoofType, SustainerUnit, Tower, Width } from './model'
+import { columnFloors, columnsOf, rowFloors, unitsOf, type DrawerUnit, type RoofType, type SustainerUnit, type Tower, type Width } from './model'
 import { createResolver, type Resolver } from './resolve'
 
 /**
@@ -66,11 +66,11 @@ export function partsForTower(tower: Tower, options: PartsOptions): PartLine[] {
     ...backAttachmentParts(tower),
   ]
   for (const row of tower.rows) {
-    for (const unit of row.units) {
+    for (const unit of unitsOf(row)) {
       wants.push(
         ...(unit.kind === 'drawer'
-          ? from(SOURCES.drawer, drawerParts(unit, tower.depth, row.height, resolver))
-          : from(SOURCES.sustainer, sustainerParts(unit, tower.depth, row.height, ctx))),
+          ? from(SOURCES.drawer, drawerParts(unit, tower.depth, unit.height, resolver))
+          : from(SOURCES.sustainer, sustainerParts(unit, tower.depth, unit.height, ctx))),
       )
     }
   }
@@ -98,12 +98,19 @@ function validateTower(tower: Tower) {
     if (tower.roof === 'under table mount') throw new UnavailableError('A tower hangs either on a wall or under a table, not both')
   }
   tower.rows.forEach((row, i) => {
-    const fill = row.units.map((u) => u.width).join('+')
+    const columns = columnsOf(row)
+    const fill = columns.map((c) => c.width).join('+')
     if (!ROW_FILLS[tower.width].includes(fill)) {
       throw new UnavailableError(`Row ${i + 1}: ${fill || 'no units'} does not fill the ${tower.width} tower width`)
     }
-    if (row.height !== '1F' && row.units.some((u) => u.width === 'XL')) {
-      throw new UnavailableError(`Row ${i + 1}: XL only comes in 1F`)
+    for (const column of columns) {
+      if (column.units.length === 0) throw new UnavailableError(`Row ${i + 1}: a column is empty`)
+      if (column.units.some((u) => u.width !== column.width)) throw new UnavailableError(`Row ${i + 1}: a column mixes widths`)
+      if (column.units.some((u) => u.width === 'XL' && u.height !== '1F')) throw new UnavailableError(`Row ${i + 1}: XL only comes in 1F`)
+    }
+    const heights = columns.map(columnFloors)
+    if (heights.some((h) => h !== heights[0])) {
+      throw new UnavailableError(`Row ${i + 1}: its columns must reach the same height, but are ${heights.map((h) => `${h}F`).join(' and ')}`)
     }
   })
 }
@@ -185,19 +192,29 @@ function bottomParts(tower: Tower, ctx: Ctx): Want[] {
   ]
 }
 
+/**
+ * Backbones and pegboard boards come in 1F and 2F heights (XL only in 1F): the pieces covering a Row of this
+ * many floors, as many 2F pieces as fit and a 1F piece for an odd height.
+ */
+export function backPieces(width: Width, floors: number): { height: '1f' | '2f'; qty: number }[] {
+  const twos = width === 'XL' ? 0 : Math.floor(floors / 2)
+  const ones = floors - 2 * twos
+  return [...(twos ? [{ height: '2f' as const, qty: twos }] : []), ...(ones ? [{ height: '1f' as const, qty: ones }] : [])]
+}
+
+const BACK_PIECES_FLAG: Flag = {
+  kind: 'inferred',
+  note: 'Each Row is covered by 2F pieces plus a 1F piece for an odd height (two 2F for a 4F Row); no manual gives the count.',
+  source: 'Modifications pp7–11; piece sizes',
+}
+
 // Modifications pp7–11: backbones bolt down the back, bridging neighbouring modules.
 function backboneParts(tower: Tower): Want[] {
   if (tower.backbone === 'none') return []
   const prefix = tower.backbone === 'universal' ? 'universal ' : tower.width.toLowerCase()
-  const flag: Flag = {
-    kind: 'inferred',
-    note: 'One backbone per Row matching its height (two 2F backbones for a 4F Row); no manual gives the count.',
-    source: 'Modifications pp7–11',
-  }
-  return tower.rows.flatMap((row): Want[] => {
-    const h = row.height === '1F' ? '1f' : '2f'
-    return [{ tidyPath: `${MODS}/backbone/${prefix}${h} backbone.stl`, qty: row.height === '4F' ? 2 : 1, role: 'body', flags: [flag] }]
-  })
+  return tower.rows.flatMap((row): Want[] => backPieces(tower.width, rowFloors(row)).map(({ height, qty }) => ({
+    tidyPath: `${MODS}/backbone/${prefix}${height} backbone.stl`, qty, role: 'body', flags: [BACK_PIECES_FLAG],
+  })))
 }
 
 /** Handles, pegboard boards and wall mounts: what attaches to the back of a Tower. */
@@ -228,17 +245,17 @@ function backAttachmentParts(tower: Tower): Want[] {
   }
   if (tower.pegboard) {
     const dir = `${MODS}/pegboard attachment/${tower.pegboard === 'skadis' ? 'ikea skadis' : 'ussa'} pegboard`
-    const flag: Flag = { kind: 'inferred', note: 'One pegboard board per backbone, matching its height (they come in the same 1F and 2F sizes).', source: 'Modifications p15; board sizes' }
-    wants.push(...from(SOURCES.pegboard, tower.rows.map((row): Want => ({
-      tidyPath: `${dir}/${w}${row.height === '1F' ? '1f' : '2f'}.stl`, qty: row.height === '4F' ? 2 : 1, role: 'body', flags: [flag],
-    }))))
+    const flag: Flag = { kind: 'inferred', note: 'One pegboard board per backbone piece, matching its height (they come in the same 1F and 2F sizes).', source: 'Modifications p15; board sizes' }
+    wants.push(...from(SOURCES.pegboard, tower.rows.flatMap((row) => backPieces(tower.width, rowFloors(row)).map(({ height, qty }): Want => ({
+      tidyPath: `${dir}/${w}${height}.stl`, qty, role: 'body', flags: [flag],
+    })))))
   }
   if (tower.wallMount) {
     const second: Flag = { kind: 'inferred', note: 'One second part on the wall for each wall mount; the manual shows them but gives no count.', source: 'Mounting Instructions pp6–9' }
     for (const row of tower.rows) {
-      for (const unit of row.units) {
+      for (const unit of unitsOf(row)) {
         wants.push(...from(SOURCES.wallMount, [
-          { tidyPath: `${MODS}/wall mounts/${unit.width.toLowerCase()}${row.height.toLowerCase()} wall mount.stl`, qty: 1, role: 'body' },
+          { tidyPath: `${MODS}/wall mounts/${unit.width.toLowerCase()}${unit.height.toLowerCase()} wall mount.stl`, qty: 1, role: 'body' },
           { tidyPath: `${MODS}/wall mounts/wall mount second part.stl`, qty: 1, role: 'body', flags: [second] },
         ]))
       }

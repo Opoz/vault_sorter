@@ -1,3 +1,4 @@
+import { deflateSync, strToU8 } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import { addTower, newLayout, placeUnit, updateLayout, type EditorLayout, type OpResult, type UnitSpec } from './layoutOps'
 import { decodeLayout, encodeLayout } from './share'
@@ -7,6 +8,20 @@ const ok = (r: OpResult): EditorLayout => {
   return r.layout
 }
 const drawer = (width: UnitSpec['width'], height: UnitSpec['height'] = '1F'): UnitSpec => ({ kind: 'drawer', width, height })
+
+/** A link holding exactly this data, as an older or damaged link might. */
+const rawLink = (data: unknown) => {
+  let binary = ''
+  for (const b of deflateSync(strToU8(JSON.stringify(data)))) binary += String.fromCharCode(b)
+  return `1.${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`
+}
+
+/** Links leave ids out (they're random); compare everything else. */
+const withoutIds = (value: unknown): unknown =>
+  Array.isArray(value) ? value.map(withoutIds)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(Object.entries(value).filter(([k]) => k !== 'id').map(([k, v]) => [k, withoutIds(v)]))
+      : value
 
 /** A layout of several towers, each a few rows high: about as big as a shared layout gets in practice. */
 function bigLayout(): EditorLayout {
@@ -29,7 +44,7 @@ describe('share links', () => {
 
     expect(received.id).not.toBe(sent.id)
     expect(received.name).toBe(sent.name)
-    expect(received.towers).toEqual(sent.towers)
+    expect(withoutIds(received.towers)).toEqual(withoutIds(sent.towers))
     expect(received.colours).toEqual(sent.colours)
     expect([received.plateEdgeMm, received.plateDensity, received.splitParts]).toEqual([4, 'roomy', sent.splitParts])
   })
@@ -51,8 +66,19 @@ describe('share links', () => {
   })
 
   it('refuses a link whose layout has a tower in an impossible shape', () => {
-    const broken = { ...bigLayout(), towers: [{ id: 'x', width: 'Q', depth: null, rows: 'oops' }] } as unknown as EditorLayout
-    expect(decodeLayout(encodeLayout(broken))).toBeUndefined()
+    const broken = { ...bigLayout(), towers: [{ width: 'Q', depth: null, rows: 'oops' }] }
+    expect(decodeLayout(rawLink(broken))).toBeUndefined()
+  })
+
+  // Links made before Columns, and with ids, still open.
+  it('opens a link made before columns', () => {
+    const unit = { id: 'u', kind: 'drawer', width: 'S', baseplate: 'none', gearedRails: false, key: 'normal' }
+    const old = { ...bigLayout(), towers: [{ id: 't', width: 'L', depth: null, roof: 'grid', bottom: 'none', backbone: 'none',
+      rows: [{ id: 'r', height: '1F', units: [unit, { ...unit, id: 'v' }] }] }] }
+
+    const received = decodeLayout(rawLink(old))!
+
+    expect(received.towers[0].rows[0].columns.map((c) => c.units[0].height)).toEqual(['1F', '1F'])
   })
 
   // Progress is the sender's own; whoever opens the link starts fresh.

@@ -183,6 +183,15 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
 .hw-handle { position: absolute; background: var(--secondary, #2f3236); box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.25); }
 .tower-table { height: 10px; margin: 0 -24px; background: #8a6f52; border-radius: 2px; }
 .tower-row { display: flex; }
+/* A Column stacks its units bottom first; a short Column's slot sits on top. */
+.tower-column { position: relative; display: flex; flex-direction: column-reverse; gap: 2px; height: 100%; }
+.column-slot { flex: none; width: 100%; box-sizing: border-box; }
+.column-top {
+  position: absolute; left: 0; right: 0; top: -11px; height: 22px; z-index: 3; display: grid; place-items: center;
+  border: 2px dashed var(--select); border-radius: var(--unit-radius); background: rgb(47 111 235 / 0.08);
+  font-size: 0.7rem; color: var(--select);
+}
+.column-top.is-over { background: rgb(47 111 235 / 0.22); border-style: solid; }
 .tower-row.is-incomplete { background: repeating-linear-gradient(45deg, transparent 0 6px, rgb(183 121 31 / 0.15) 6px 12px); }
 .tower-lip { background: rgb(36 39 42 / 0.18); }
 .tower-empty {

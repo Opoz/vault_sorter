@@ -13,8 +13,12 @@ One vertical stack: an optional Base, then Units, then a Roof. A Tower has one W
 _Avoid_: Stack, build
 
 **Row**:
-One horizontal layer of a Tower: either a single Unit of the Tower's Width, or narrower Units side by side that add up to it (S+S for L, S+M for XL). Every Unit in a Row has the same Height.
+One horizontal layer of a Tower: either a single Unit of the Tower's Width, or two Columns side by side whose Widths add up to it (S+S for L, S+M or M+S for XL). A Row's height is its Columns' height, which must be the same for both.
 _Avoid_: Floor (a Height measure), level, layer, shelf
+
+**Column**:
+One side of a split Row: a stack of Units of one Width, any mix of Heights, drawers or sustainers. Modules only connect at their top, so the two Columns of a Row need only reach the same total height (e.g. S4F + S1F beside S2F + S1F + S2F, both 5F); their joins needn't line up.
+_Avoid_: Stack (a Tower is the stack), side
 
 **Unit**:
 One Module plus every part needed to make it work (its Box, Facade, runners and latch for a Drawer; its lid, hinges and locks for a Sustainer). A Tower is made of Units.

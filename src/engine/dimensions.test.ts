@@ -41,4 +41,15 @@ describe('towerDimensions', () => {
     expect(towerDimensions(tower({ width: 'L', rows: rows('L', '1F'), roof: 'heavyweight' }), opts).heightMm - bare).toBeCloseTo(88.3, 0)
     expect(towerDimensions(tower({ width: 'L', rows: rows('L', '1F'), bottom: 'casters' }), opts).heightMm - bare).toBeCloseTo(52.2, 0)
   })
+
+  it('counts a split row by the height its columns reach', () => {
+    const unit = (height: '1F' | '2F' | '4F') => ({ ...drawer('S'), height })
+    const split = tower({
+      width: 'L',
+      rows: [{ columns: [{ width: 'S', units: [unit('4F'), unit('1F')] }, { width: 'S', units: [unit('2F'), unit('1F'), unit('2F')] }] }],
+    })
+    const stacked = tower({ width: 'L', rows: rows('L', '4F', '1F') })
+
+    expect(towerDimensions(split, opts).heightMm).toBeCloseTo(towerDimensions(stacked, opts).heightMm, 6)
+  })
 })
