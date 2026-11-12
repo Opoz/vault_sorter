@@ -2,7 +2,7 @@ import { useDraggable, useDroppable } from '@dnd-kit/core'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Depth } from '../engine/model'
 import { missingWidth, rowProblems, type Colours, type EditorRow, type EditorTower, type EditorUnit } from '../editor/layoutOps'
-import { BASE_MM, belowBaseMm, CASTER, FEET_INSET_MM, FOOT_MM, HANDLE_MM, LIP_MM, ROOF_MM, towerHeightMm, TYRE_WIDTH_MM, WHEEL_MM, WIDTH_MM, rowHeightMm } from './dims'
+import { BASE_MM, belowBaseMm, CASTER, FEET_INSET_MM, FOOT_MM, HANDLE_MM, HEAVYWEIGHT_HANDLE_MM, LIP_MM, ROOF_MM, towerHeightMm, TYRE_WIDTH_MM, WHEEL_MM, WIDTH_MM, rowHeightMm } from './dims'
 import { describe } from './text'
 import { UnitBlock } from './UnitBlock'
 import type { Selection } from './useEditor'
@@ -68,7 +68,12 @@ export function TowerView({ tower, index, colours, scale, depth, heightMm: measu
             }}
           >
             {tower.roof !== 'none' && tower.roof !== 'under table mount' && (
-              <div className="tower-roof" style={{ height: Math.max(ROOF_MM[tower.roof] * scale, 4) }} title={`${tower.roof} roof`}>
+              <div
+                className={`tower-roof${tower.roof === 'heavyweight' ? ' roof-heavyweight' : ''}`}
+                style={{ height: Math.max(ROOF_MM[tower.roof] * scale, 4) }}
+                title={`${tower.roof} roof`}
+              >
+                {tower.roof === 'heavyweight' && width && <HeavyweightRoof towerMm={WIDTH_MM[width]} scale={scale} />}
                 {tower.roof === 'grid' && (
                   <span
                     className="top-handle"
@@ -118,6 +123,29 @@ export function TowerView({ tower, index, colours, scale, depth, heightMm: measu
         <figcaption className="dim dim-width">{WIDTH_MM[width].toFixed(1)} mm wide</figcaption>
       )}
     </figure>
+  )
+}
+
+/**
+ * The heavyweight roof from the front (Instructions Manual p10): a tall bin at each end with the bar handle across
+ * the gap between them, over a low floor. Bin height is the roof's measured 88.3 mm and the handle its measured
+ * 156.5 × 29.5 mm; the floor thickness and the handle's height are drawn from the picture, not measured.
+ */
+function HeavyweightRoof({ towerMm, scale }: { towerMm: number; scale: number }) {
+  const px = (mm: number) => mm * scale
+  const gap = HEAVYWEIGHT_HANDLE_MM.length
+  const bin = (towerMm - gap) / 2
+  return (
+    <>
+      <span className="hw-floor" style={{ left: px(bin), width: px(gap), height: px(15) }} />
+      <span className="hw-bin hw-bin-left" style={{ width: px(bin) }} />
+      <span className="hw-bin hw-bin-right" style={{ width: px(bin) }} />
+      <span
+        className="hw-handle"
+        title="Heavyweight roof handle"
+        style={{ left: px(bin), width: px(gap), height: px(HEAVYWEIGHT_HANDLE_MM.thickness), bottom: px(42), borderRadius: px(HEAVYWEIGHT_HANDLE_MM.thickness / 2) }}
+      />
+    </>
   )
 }
 

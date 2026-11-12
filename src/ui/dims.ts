@@ -30,6 +30,8 @@ export const belowBaseMm = (bottom: 'none' | 'feet' | 'wheels' | 'casters') =>
  * Top Handle as seen from the front: measured 126 mm long and 51 mm tall. The loop's thickness and corner are
  * drawn from USSA's renders, not measured.
  */
+/** Heavyweight Roof Handle, measured: a bar 156.5 mm long and 29.5 mm thick. */
+export const HEAVYWEIGHT_HANDLE_MM = { length: 156.5, thickness: 29.5 }
 export const HANDLE_MM = { length: 126, height: 51, top: 13, side: 22, bottom: 17, corner: 16 }
 export const FOOT_MM = 60.5
 
