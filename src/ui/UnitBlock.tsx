@@ -12,6 +12,8 @@ interface Props {
   scale: number
   selected?: boolean
   label?: boolean
+  /** Pixels taken off the drawn height, for the gap above it when stacked, so a stack keeps its true height. */
+  trimPx?: number
 }
 
 /** Height of the lock's centre above the bottom of a drawer, the same at every height (from USSA's renders). */
@@ -23,7 +25,7 @@ const LOCK_MM = 25
  * upright lever, a lock indicator and a plain cap; taller drawers split down the middle to the lock.
  * Sustainer: two dark latches hanging from the top edge, screws in the corners, a label pill bottom left.
  */
-export function UnitBlock({ kind, width, height, colours, scale, selected, label = true }: Props) {
+export function UnitBlock({ kind, width, height, colours, scale, selected, label = true, trimPx = 0 }: Props) {
   const w = WIDTH_MM[width]
   const h = rowHeightMm(height)
   const detailed = scale >= 0.3
@@ -33,7 +35,7 @@ export function UnitBlock({ kind, width, height, colours, scale, selected, label
   const sizeCode = `${width} ${height}`
   const style = {
     width: w * scale,
-    height: h * scale,
+    height: h * scale - trimPx,
     borderRadius: mm(8),
     '--body': colours.body,
     '--accent': colours.accent,

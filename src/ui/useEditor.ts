@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { addTower, duplicateUnit as copyUnit, newLayout, type EditorLayout, type OpResult } from '../editor/layoutOps'
+import { addTower, copyUnitOnto, duplicateColumn, duplicateUnit as copyUnit, newLayout, type EditorLayout, type OpResult } from '../editor/layoutOps'
 import { decodeLayout, encodeLayout } from '../editor/share'
 import { createLayoutStore, type KeyValueStorage } from '../editor/storage'
 import { DEFAULT_PRINTER_ID, findPrinter, type Printer } from './data'
@@ -119,6 +119,14 @@ export function useEditor() {
       refresh()
       open(shared.id)
       setNotice(`Opened "${name}" from a share link. It's your own copy: changes won't affect the sender's.`)
+    },
+    /** Copy a whole column across, as the other column of its row. */
+    duplicateColumn(towerId: string, rowId: string, columnId: string) {
+      apply(duplicateColumn(layout, towerId, rowId, columnId))
+    },
+    /** Copy a unit onto a chosen column. */
+    copyUnitOnto(towerId: string, unitId: string, rowId: string, columnId: string) {
+      apply(copyUnitOnto(layout, towerId, unitId, rowId, columnId))
     },
     duplicate(id: string) {
       const copy = store.duplicate(id)

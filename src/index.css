@@ -192,6 +192,8 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
   font-size: 0.7rem; color: var(--select);
 }
 .column-top.is-over { background: rgb(47 111 235 / 0.22); border-style: solid; }
+/* The same zone on a join between stacked units, placed from script. */
+.column-join { top: auto; }
 .tower-row.is-incomplete { background: repeating-linear-gradient(45deg, transparent 0 6px, rgb(183 121 31 / 0.15) 6px 12px); }
 .tower-lip { background: rgb(36 39 42 / 0.18); }
 .tower-empty {
@@ -202,6 +204,9 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
 
 .placed { padding: 0; border: 0; background: none; border-radius: var(--unit-radius); touch-action: none; display: block; }
 .placed.is-dragging { opacity: 0.35; }
+/* A unit with a part too big for the printer. */
+.placed.is-blocked { outline: 2px solid var(--bad); outline-offset: 1px; border-radius: var(--unit-radius); }
+.fit-why { font-size: 0.75rem; color: var(--bad); max-width: 18rem; line-height: 1.25; }
 
 .gap { position: relative; height: 0; font-size: 0.75rem; color: var(--select); }
 /* The hit area overlays the seam (10 px either side) and takes no space, so the tower never moves mid-drag. */
@@ -297,11 +302,15 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
 /* Its own compositing layer, so a preview moving over it never leaves stale pixels behind. */
 .canvas { isolation: isolate; transform: translateZ(0); }
 .trash {
-  /* Floats over the canvas: appearing must not push the towers around mid-drag. */
-  position: absolute; bottom: 1.25rem; left: 50%; transform: translateX(-50%); z-index: 3;
-  padding: 0.75rem 1.5rem; border-radius: 999px; background: var(--panel); border: 2px dashed var(--bad); color: var(--bad);
+  /* Fixed over the canvas (placed from script): appearing must not push the towers around mid-drag. */
+  position: fixed; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.3rem;
+  border-radius: 50%; background: var(--panel); border: 2px dashed var(--bad); color: var(--bad);
+  font-size: 0.8rem; font-weight: 600; box-shadow: 0 6px 20px rgb(0 0 0 / 0.15);
+  transition: transform 120ms ease, background 120ms ease;
 }
-.trash.is-over { background: var(--bad); color: var(--panel); }
+.trash.is-over { background: var(--bad); color: var(--panel); border-style: solid; transform: scale(1.12); }
+/* Over the bin, the dragged unit shrinks and fades as if pulled in. */
+.drag-preview.is-binned > * { transform: scale(0.35); opacity: 0.6; transition: transform 140ms ease, opacity 140ms ease; }
 
 /* ---------- Inspector ---------- */
 .inspector { padding: 1rem; border-left: 1px solid var(--line); overflow-y: auto; background: var(--panel); }

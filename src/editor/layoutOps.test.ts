@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addTower, changePrinted, duplicateUnit, moveRow, newLayout, placeUnit, removeUnit, rowProblems, setTowerWidth, toEngineTower, updateTower,
+  addTower, changePrinted, copyUnitOnto, duplicateColumn, duplicateUnit, moveUnit, moveRow, newLayout, placeUnit, removeUnit, rowProblems, setTowerWidth, toEngineTower, updateTower,
   rowFloors, rowUnits, type EditorLayout, type OpResult, type UnitSpec,
 } from './layoutOps'
 
@@ -211,5 +211,72 @@ describe('layout editing', () => {
 
     expect(copied.towers[0].rows[0].columns[1].units.map((u) => u.height)).toEqual(['1F', '1F'])
     expect(rowProblems(copied.towers[0])).toEqual([])
+  })
+
+  // Issue #13: duplicating from the right column into a shorter left one.
+  it('duplicates into whichever column is short of it, left or right', () => {
+    let { layout, towerId } = towerWith(drawer('S', '1F'))
+    layout = ok(setTowerWidth(layout, towerId, 'L'))
+    layout = ok(placeUnit(layout, towerId, { kind: 'beside', rowId: layout.towers[0].rows[0].id }, drawer('S', '1F')))
+    const row = layout.towers[0].rows[0]
+    layout = ok(placeUnit(layout, towerId, { kind: 'onColumn', rowId: row.id, columnId: row.columns[1].id }, drawer('S', '1F')))
+    const rightBottom = layout.towers[0].rows[0].columns[1].units[0]
+
+    const copied = ok(duplicateUnit(layout, towerId, rightBottom.id))
+
+    expect(copied.towers[0].rows[0].columns.map((c) => c.units.length)).toEqual([2, 2])
+  })
+
+  // Issue #12: a lone stack with nothing beside it can be copied across whole, finishing the row.
+  it('copies a whole column across to fill its row', () => {
+    let { layout, towerId } = towerWith(drawer('S', '2F'))
+    layout = ok(setTowerWidth(layout, towerId, 'L'))
+    const row = layout.towers[0].rows[0]
+    layout = ok(placeUnit(layout, towerId, { kind: 'onColumn', rowId: row.id, columnId: row.columns[0].id }, drawer('S', '1F')))
+
+    const copied = ok(duplicateColumn(layout, towerId, row.id, row.columns[0].id))
+
+    const columns = copied.towers[0].rows[0].columns
+    expect(columns.map((c) => c.units.map((u) => u.height))).toEqual([['2F', '1F'], ['2F', '1F']])
+    expect(columns[1].units[0].id).not.toBe(columns[0].units[0].id)
+    expect(rowProblems(copied.towers[0])).toEqual([])
+  })
+
+  it('copies a chosen unit onto a chosen column', () => {
+    let { layout, towerId } = towerWith(drawer('S', '2F'))
+    layout = ok(setTowerWidth(layout, towerId, 'L'))
+    layout = ok(placeUnit(layout, towerId, { kind: 'beside', rowId: layout.towers[0].rows[0].id }, drawer('S', '4F')))
+    const row = layout.towers[0].rows[0]
+
+    const copied = ok(copyUnitOnto(layout, towerId, row.columns[0].units[0].id, row.id, row.columns[0].id))
+
+    expect(copied.towers[0].rows[0].columns[0].units.map((u) => u.height)).toEqual(['2F', '2F'])
+  })
+
+  // Inserting between two stacked units (reported with an L tower: S2F sustainer under an S2F drawer).
+  it('inserts a unit between two stacked units of a column', () => {
+    let { layout, towerId } = towerWith(drawer('S', '2F'))
+    layout = ok(setTowerWidth(layout, towerId, 'L'))
+    const row = layout.towers[0].rows[0]
+    layout = ok(placeUnit(layout, towerId, { kind: 'onColumn', rowId: row.id, columnId: row.columns[0].id }, drawer('S', '4F')))
+
+    const inserted = ok(placeUnit(layout, towerId, { kind: 'onColumn', rowId: row.id, columnId: row.columns[0].id, index: 1 }, drawer('S', '1F')))
+
+    expect(inserted.towers[0].rows[0].columns[0].units.map((u) => u.height)).toEqual(['2F', '1F', '4F'])
+  })
+
+  it('moves a unit to a new place in its own column', () => {
+    let { layout, towerId } = towerWith(drawer('S', '1F'))
+    layout = ok(setTowerWidth(layout, towerId, 'L'))
+    const row = layout.towers[0].rows[0]
+    const columnId = row.columns[0].id
+    layout = ok(placeUnit(layout, towerId, { kind: 'onColumn', rowId: row.id, columnId }, drawer('S', '2F')))
+    layout = ok(placeUnit(layout, towerId, { kind: 'onColumn', rowId: row.id, columnId }, drawer('S', '4F')))
+    const bottom = layout.towers[0].rows[0].columns[0].units[0]
+
+    // Dropped on the join between the 2F and the 4F (index 2, counted before the move).
+    const moved = ok(moveUnit(layout, towerId, bottom.id, towerId, { kind: 'onColumn', rowId: row.id, columnId, index: 2 }))
+
+    expect(moved.towers[0].rows[0].columns[0].units.map((u) => u.height)).toEqual(['2F', '1F', '4F'])
   })
 })

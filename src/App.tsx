@@ -10,7 +10,7 @@ import { filamentEstimate } from './engine/filament'
 import { hardwareForTower } from './engine/hardware'
 import { partsForTower, UnavailableError } from './engine/parts'
 import {
-  addTower, moveUnit, placeUnit, removeUnit, toEngineTower, type DropTarget, type EditorLayout, type UnitSpec,
+  addTower, moveUnit, placeUnit, removeUnit, toEngineTower, type DropTarget, type EditorLayout, type EditorTower, type UnitSpec,
 } from './editor/layoutOps'
 import { HEIGHTS, WIDTHS, type Depth, type Unit } from './engine/model'
 import { catalog, printerLabel, printers, printerSource } from './ui/data'
@@ -64,7 +64,19 @@ const dropRank = (id: string | number) => {
   if (key.startsWith('col:') || key.startsWith('colslot:')) return 0
   return 1
 }
+/** How close the pointer must come to the bin for it to pull the dragged unit in. */
+const TRASH_PULL_PX = 100
+
 const dropUnderPointer: CollisionDetection = (args) => {
+  // The bin pulls a unit in from a little way off, so removing doesn't need precise aim.
+  const bin = args.droppableRects.get('trash')
+  const p = args.pointerCoordinates
+  if (bin && p) {
+    const dx = Math.max(bin.left - p.x, 0, p.x - (bin.left + bin.width))
+    const dy = Math.max(bin.top - p.y, 0, p.y - (bin.top + bin.height))
+    const container = args.droppableContainers.find((c) => c.id === 'trash')
+    if (container && Math.hypot(dx, dy) <= TRASH_PULL_PX) return [{ id: 'trash', data: { droppableContainer: container, value: 0 } }]
+  }
   const hits = pointerWithin(args)
   if (hits.length === 0) return hits
   const best = Math.min(...hits.map((h) => dropRank(h.id)))
@@ -82,7 +94,7 @@ type DragData =
 type DropData =
   | { type: 'gap'; towerId: string; index: number }
   | { type: 'slot'; towerId: string; rowId: string }
-  | { type: 'column'; towerId: string; rowId: string; columnId: string }
+  | { type: 'column'; towerId: string; rowId: string; columnId: string; index?: number }
   | { type: 'newTower'; useEmptyTower?: boolean }
   | { type: 'trash' }
 
@@ -99,6 +111,10 @@ export default function App() {
   const paletteFit = useMemo(() => unitFitByPrinter(printer, layout.splitParts), [printer, layout.splitParts])
   const { ref: canvasRef, scale } = useCanvasScale(layout)
   const [dropNotice, setDropNotice] = useState<DropNotice | null>(null)
+  const [overTrash, setOverTrash] = useState(false)
+  // The canvas element, for placing the bin over it.
+  const [canvasElement, setCanvasElement] = useState<HTMLElement | null>(null)
+  const trackCanvas = useCallback((el: HTMLElement | null) => { setCanvasElement(el); canvasRef(el) }, [canvasRef])
 
   // Opening a share link (#share=…), on load or pasted into a tab already open: import it once, then take it out
   // of the address so a reload doesn't import it again.
@@ -128,6 +144,7 @@ export default function App() {
 
   function onDragEnd(e: DragEndEvent) {
     setDragging(null)
+    setOverTrash(false)
     const drag = e.active.data.current as DragData | undefined
     const drop = e.over?.data.current as DropData | undefined
     if (!drag || !drop) return
@@ -152,7 +169,7 @@ export default function App() {
     } else {
       towerId = drop.towerId
       target = drop.type === 'gap' ? { kind: 'newRow', index: drop.index }
-        : drop.type === 'column' ? { kind: 'onColumn', rowId: drop.rowId, columnId: drop.columnId }
+        : drop.type === 'column' ? { kind: 'onColumn', rowId: drop.rowId, columnId: drop.columnId, index: drop.index }
         : { kind: 'beside', rowId: drop.rowId }
     }
     const result = drag.type === 'palette'
@@ -189,11 +206,12 @@ export default function App() {
       {editor.unreadable.length > 0 && (
         <p className="banner">{editor.unreadable.length} saved layout(s) couldn't be read and were skipped.</p>
       )}
-      <DndContext sensors={sensors} collisionDetection={dropUnderPointer} measuring={MEASURING} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}>
+      <DndContext sensors={sensors} collisionDetection={dropUnderPointer} measuring={MEASURING} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}
+        onDragOver={(e) => setOverTrash(e.over?.id === 'trash')}>
         <div className="workbench">
           <Palette colours={layout.colours} onAdd={addFromPalette} fit={paletteFit} printerName={printerLabel(printer)} />
           <Canvas
-            canvasRef={canvasRef}
+            canvasRef={trackCanvas}
             active={dragging !== null}
             hint={(() => {
               const empty = layout.towers.findIndex((t) => t.rows.length === 0)
@@ -213,10 +231,13 @@ export default function App() {
                     depth={t?.depth}
                     heightMm={t?.dimensions?.heightMm}
                     fitState={fitState(t)}
+                    fitWhy={fitState(t) === 'none' ? fitWhy(tower, t, printer, layout.splitParts) : undefined}
                     selection={editor.selection}
                     dragging={dragging !== null}
                     onSelect={editor.setSelection}
                     onDuplicate={editor.duplicateUnit}
+                    onCopyColumn={editor.duplicateColumn}
+                    onCopyOnto={editor.copyUnitOnto}
                     dragWidth={dragging && 'spec' in dragging ? dragging.spec.width : undefined}
                   />
                 )
@@ -230,7 +251,7 @@ export default function App() {
               />
             </div>
             <div className="floor" aria-hidden="true" />
-            {dragging?.type === 'unit' && <Trash />}
+            {dragging?.type === 'unit' && <Trash canvas={canvasElement} />}
           </Canvas>
           <aside className="inspector">
             {editor.notice && (
@@ -244,7 +265,7 @@ export default function App() {
         </div>
         {/* Rendered at the top of the page, outside the scrolling canvas, so moving it repaints cleanly. */}
         {createPortal(
-          <DragOverlay dropAnimation={null} className="drag-preview">
+          <DragOverlay dropAnimation={null} className={`drag-preview${overTrash ? ' is-binned' : ''}`}>
             {dragging && (
               <UnitBlock {...dragging.spec} colours={layout.colours} scale={dragging.type === 'palette' ? Math.max(PALETTE_SCALE, scale) : scale} />
             )}
@@ -344,10 +365,30 @@ function NewTowerDrop({ active, onAdd }: { active: boolean; onAdd: () => void })
   )
 }
 
-function Trash() {
+/**
+ * The bin, shown while a placed unit is dragged, in the canvas's top right corner, which towers (standing on the
+ * floor) leave empty, so its pull never steals a drop meant for a tower. It's rendered outside the canvas (fixed):
+ * inside the transformed, scrolling canvas its hit area didn't line up with where it was drawn.
+ */
+function Trash({ canvas }: { canvas: HTMLElement | null }) {
   const { setNodeRef, isOver } = useDroppable({ id: 'trash', data: { type: 'trash' } })
-  return <div ref={setNodeRef} className={`trash${isOver ? ' is-over' : ''}`}>Drop here to remove</div>
+  const box = canvas?.getBoundingClientRect()
+  if (!box) return null
+  return createPortal(
+    <div
+      ref={setNodeRef}
+      className={`trash${isOver ? ' is-over' : ''}`}
+      style={{ left: box.right - TRASH_SIZE_PX - 32, top: box.top + 32, width: TRASH_SIZE_PX, height: TRASH_SIZE_PX }}
+    >
+      <svg viewBox="0 0 24 24" width="40" height="40" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+      </svg>
+      <span>{isOver ? 'Let go to remove' : 'Drop to remove'}</span>
+    </div>,
+    document.body,
+  )
 }
+const TRASH_SIZE_PX = 128
 
 function towerInfo(layout: EditorLayout, printer: Editor['printer']): Map<string, TowerInfo> {
   const map = new Map<string, TowerInfo>()
@@ -401,6 +442,40 @@ function unitFitByPrinter(printer: Editor['printer'], splitParts: EditorLayout['
   return fit
 }
 
+
+/**
+ * Why a built tower doesn't fit the printer, for the drawing: which units have a part that's too big (each with
+ * the reason), and a one-line summary of the worst part. Uses the chosen depth, or the shallowest if none fits.
+ */
+export interface FitWhy {
+  readonly summary: string
+  readonly units: ReadonlyMap<string, string>
+}
+
+function fitWhy(tower: EditorTower, t: TowerInfo | undefined, printer: Editor['printer'], splitParts: EditorLayout['splitParts']): FitWhy | undefined {
+  const option = t?.choice && (t.choice.options.find((o) => o.depth === t.depth) ?? t.choice.options[0])
+  if (!option || option.fits) return undefined
+  if (option.unavailable) return { summary: option.unavailable, units: new Map() }
+  const reason = (b: (typeof option.blockers)[number]) =>
+    `${b.path.split('/').pop()!.replace(/\.stl$/i, '')}: ${b.fit.limitedBy === 'height' ? 'too tall' : 'too big'} by ${(-b.fit.spareMm).toFixed(1)} mm`
+  const units = new Map<string, string>()
+  for (const row of tower.rows) {
+    for (const column of row.columns) {
+      for (const unit of column.units) {
+        // The unit's own parts, from a tower holding just this unit.
+        const alone = { width: unit.width, depth: option.depth, roof: 'none' as const, bottom: 'none' as const, backbone: 'none' as const,
+          rows: [{ height: unit.height, units: [unit] }] }
+        let paths: Set<string>
+        try { paths = new Set(partsForTower(alone, { catalog, printer, splitParts }).map((l) => l.path)) } catch { continue }
+        const own = option.blockers.filter((b) => paths.has(b.path))
+        if (own.length) units.set(unit.id, own.map(reason).join('; '))
+      }
+    }
+  }
+  const worst = option.blockers[0]
+  const more = option.blockers.length - 1
+  return { summary: `${reason(worst)}${more > 0 ? `, and ${more} more` : ''}`, units }
+}
 
 function fitState(t: TowerInfo | undefined): 'fits' | 'tight' | 'none' | 'incomplete' {
   if (!t?.choice) return 'incomplete'

@@ -20,15 +20,20 @@ interface Props {
   /** Height from the engine's measured dimensions, when the tower is complete. */
   heightMm?: number
   fitState: 'fits' | 'tight' | 'none' | 'incomplete'
+  /** Why the tower doesn't fit, when it doesn't: a summary, and the units with a part too big. */
+  fitWhy?: { readonly summary: string; readonly units: ReadonlyMap<string, string> }
   selection: Selection
   dragging: boolean
   onSelect: (s: Selection) => void
   onDuplicate: (towerId: string, unitId: string) => void
+  onCopyColumn: (towerId: string, rowId: string, columnId: string) => void
+  onCopyOnto: (towerId: string, unitId: string, rowId: string, columnId: string) => void
   /** Width of the unit being dragged, if any: columns of that width offer a spot on top. */
   dragWidth?: Width
 }
 
-export function TowerView({ tower, index, colours, scale, depth, heightMm: measuredHeight, fitState, selection, dragging, onSelect, onDuplicate, dragWidth }: Props) {
+export function TowerView(props: Props) {
+  const { tower, index, colours, scale, depth, heightMm: measuredHeight, fitState, selection, dragging, onSelect, dragWidth } = props
   const width = tower.width
   const problems = rowProblems(tower)
   const isSelected = selection?.type === 'tower' && selection.towerId === tower.id
@@ -58,6 +63,7 @@ export function TowerView({ tower, index, colours, scale, depth, heightMm: measu
           {width ? `${width}${depth ? depth : ''}` : 'Empty'}
           {fitState !== 'incomplete' && width && <FitBadge state={fitState} />}
         </span>
+        {props.fitWhy && <span className="fit-why">{props.fitWhy.summary}</span>}
       </button>
 
       <div className="tower-body">
@@ -111,8 +117,10 @@ export function TowerView({ tower, index, colours, scale, depth, heightMm: measu
                   selection={selection}
                   dragging={dragging}
                   onSelect={onSelect}
-                  copyable={width && missingWidth(width, row) === row.columns.at(-1)?.width ? row.columns.at(-1)?.units.at(-1) : undefined}
-                  onDuplicate={onDuplicate}
+                  copyable={width && row.columns.length === 1 && missingWidth(width, row) === row.columns[0].width ? row.columns[0] : undefined}
+                  onCopyColumn={props.onCopyColumn}
+                  blocked={props.fitWhy?.units}
+                  onCopyOnto={props.onCopyOnto}
                   dragWidth={dragWidth}
                 />
                 <Gap towerId={tower.id} index={i} active={dragging} />
@@ -195,12 +203,14 @@ function RowView(props: {
   selection: Selection
   dragging: boolean
   onSelect: (s: Selection) => void
-  /** Offered in the row's free space when a copy of its last unit would fill it. */
-  copyable?: EditorUnit
-  onDuplicate: (towerId: string, unitId: string) => void
+  /** Offered in the row's free space when a copy of its column would fill it. */
+  copyable?: EditorColumn
+  onCopyColumn: (towerId: string, rowId: string, columnId: string) => void
+  onCopyOnto: (towerId: string, unitId: string, rowId: string, columnId: string) => void
   dragWidth?: Width
+  blocked?: ReadonlyMap<string, string>
 }) {
-  const { towerId, row, rowIndex, towerWidthPx, colours, scale, problem, selection, dragging, onSelect, copyable, onDuplicate, dragWidth } = props
+  const { towerId, row, rowIndex, towerWidthPx, colours, scale, problem, selection, dragging, onSelect, copyable, onCopyColumn, onCopyOnto, dragWidth, blocked } = props
   const usedPx = row.columns.reduce((sum, c) => sum + WIDTH_MM[c.width] * scale, 0)
   const rowPx = floorsHeightMm(rowFloors(row)) * scale
   const short = columnShortfall(row)
@@ -214,14 +224,18 @@ function RowView(props: {
           rowId={row.id}
           column={column}
           shortFloors={short[ci]}
-          split={row.columns.length > 1}
+          split={row.columns.length > 1 || WIDTH_MM[column.width] * scale < towerWidthPx - 1}
           colours={colours}
           scale={scale}
           selection={selection}
           dragging={dragging}
           stackable={dragWidth === column.width}
           onSelect={onSelect}
-          onDuplicate={onDuplicate}
+          // The tallest unit of this width in the row that fits the gap, to offer as "+ Copy".
+          fillWith={rowUnitsOfWidth(row, column.width).filter((u) => FLOORS_OF[u.height] <= short[ci])
+            .sort((a, b) => FLOORS_OF[b.height] - FLOORS_OF[a.height])[0]}
+          onCopyOnto={(unitId) => onCopyOnto(towerId, unitId, row.id, column.id)}
+          blocked={blocked}
         />
       ))}
       {missing && (() => {
@@ -231,16 +245,19 @@ function RowView(props: {
         return (
           <Slot towerId={towerId} rowId={row.id} widthPx={Math.max(towerWidthPx - usedPx, 24)} active={dragging} title={problem}>
             <span className={roomy || !copyable || dragging ? 'slot-text' : 'sr-only'}>{problem}</span>
-            {copyable && !dragging && (
-              <button
-                type="button"
-                className="slot-copy"
-                aria-label={`Copy the ${copyable.width} ${copyable.kind} into this row`}
-                onClick={(e) => { e.stopPropagation(); onDuplicate(towerId, copyable.id) }}
-              >
-                {roomy ? `+ Copy the ${copyable.width} ${copyable.kind}` : `+ Copy ${copyable.width}`}
-              </button>
-            )}
+            {copyable && !dragging && (() => {
+              const one = copyable.units.length === 1 ? copyable.units[0] : undefined
+              return (
+                <button
+                  type="button"
+                  className="slot-copy"
+                  aria-label={one ? `Copy the ${one.width} ${one.kind} into this row` : `Copy the ${copyable.width} stack into this row`}
+                  onClick={(e) => { e.stopPropagation(); onCopyColumn(towerId, row.id, copyable.id) }}
+                >
+                  {one ? (roomy ? `+ Copy the ${one.width} ${one.kind}` : `+ Copy ${one.width}`) : roomy ? `+ Copy the ${copyable.width} stack` : '+ Copy stack'}
+                </button>
+              )
+            })()}
           </Slot>
         )
       })()}
@@ -266,18 +283,23 @@ function ColumnView(props: {
   dragging: boolean
   stackable: boolean
   onSelect: (s: Selection) => void
-  onDuplicate: (towerId: string, unitId: string) => void
+  /** A unit whose copy fits this column's gap, if any. */
+  fillWith?: EditorColumn['units'][number]
+  onCopyOnto: (unitId: string) => void
+  blocked?: ReadonlyMap<string, string>
 }) {
-  const { towerId, rowId, column, shortFloors, split, colours, scale, selection, dragging, stackable, onSelect, onDuplicate } = props
-  const top = column.units.at(-1)
-  const copyFits = top && FLOORS_OF[top.height] <= shortFloors
+  const { towerId, rowId, column, shortFloors, split, colours, scale, selection, dragging, stackable, onSelect, fillWith, onCopyOnto, blocked } = props
   return (
     <div className="tower-column" style={{ width: WIDTH_MM[column.width] * scale }}>
-      {column.units.map((unit) => (
+      {column.units.map((unit, i) => (
         <PlacedUnit
           key={unit.id}
           towerId={towerId}
           unit={unit}
+          // Every unit above the bottom one gives up the 2 px gap below it, so a column is exactly its floors
+          // high however it's split; otherwise stacks of many units drift out of line with their neighbours.
+          trimPx={i === 0 ? 0 : STACK_GAP_PX}
+          blockedBy={blocked?.get(unit.id)}
           height={unit.height}
           colours={colours}
           scale={scale}
@@ -286,26 +308,39 @@ function ColumnView(props: {
         />
       ))}
       {shortFloors > 0 && (
-        <ColumnSlot towerId={towerId} rowId={rowId} columnId={column.id} heightPx={shortFloors * FLOOR_MM * scale} active={dragging}>
-          <span className={shortFloors * FLOOR_MM * scale >= 44 || !copyFits || dragging ? 'slot-text' : 'sr-only'}>Needs {shortFloors}F</span>
-          {copyFits && top && !dragging && (
+        <ColumnSlot towerId={towerId} rowId={rowId} columnId={column.id} heightPx={shortFloors * FLOOR_MM * scale - STACK_GAP_PX} active={dragging}>
+          <span className={shortFloors * FLOOR_MM * scale >= 44 || !fillWith || dragging ? 'slot-text' : 'sr-only'}>Needs {shortFloors}F</span>
+          {fillWith && !dragging && (
             <button
               type="button"
               className="slot-copy"
-              aria-label={`Copy the ${top.width} ${top.height} ${top.kind} onto this column`}
-              onClick={(e) => { e.stopPropagation(); onDuplicate(towerId, top.id) }}
+              aria-label={`Copy the ${fillWith.width} ${fillWith.height} ${fillWith.kind} onto this column`}
+              onClick={(e) => { e.stopPropagation(); onCopyOnto(fillWith.id) }}
             >
-              + Copy {top.height}
+              + Copy {fillWith.height}
             </button>
           )}
         </ColumnSlot>
       )}
       {split && stackable && shortFloors === 0 && <ColumnTop towerId={towerId} rowId={rowId} columnId={column.id} />}
+      {split && stackable && column.units.slice(1).map((unit, i) => (
+        <ColumnJoin
+          key={unit.id}
+          towerId={towerId}
+          rowId={rowId}
+          columnId={column.id}
+          index={i + 1}
+          bottomPx={column.units.slice(0, i + 1).reduce((sum, u) => sum + FLOORS_OF[u.height], 0) * FLOOR_MM * scale}
+        />
+      ))}
     </div>
   )
 }
 
 const FLOORS_OF = { '1F': 1, '2F': 2, '4F': 4 } as const
+const rowUnitsOfWidth = (row: EditorRow, width: Width) => row.columns.flatMap((c) => c.units).filter((u) => u.width === width)
+/** The gap drawn between stacked units (matches .tower-column's CSS gap). */
+const STACK_GAP_PX = 2
 
 /** The empty top of a short Column: drop a unit here to stack it. */
 function ColumnSlot({ towerId, rowId, columnId, heightPx, active, children }: {
@@ -325,16 +360,31 @@ function ColumnTop({ towerId, rowId, columnId }: { towerId: string; rowId: strin
   return <div ref={setNodeRef} className={`column-top${isOver ? ' is-over' : ''}`}><span>Stack here</span></div>
 }
 
+/** While dragging a unit of this Column's width: a drop zone on a join between two stacked units, to insert it there. */
+function ColumnJoin({ towerId, rowId, columnId, index, bottomPx }: {
+  towerId: string; rowId: string; columnId: string; index: number; bottomPx: number
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `col:${columnId}:at${index}`, data: { type: 'column', towerId, rowId, columnId, index } })
+  return (
+    <div ref={setNodeRef} className={`column-top column-join${isOver ? ' is-over' : ''}`} style={{ bottom: bottomPx - 11 }}>
+      <span>Insert here</span>
+    </div>
+  )
+}
+
 function PlacedUnit(props: {
   towerId: string
   unit: EditorUnit
   height: EditorColumn['units'][number]['height']
+  trimPx?: number
+  /** Why this unit doesn't fit the printer, if it doesn't. */
+  blockedBy?: string
   colours: Colours
   scale: number
   selected: boolean
   onSelect: (s: Selection) => void
 }) {
-  const { towerId, unit, height, colours, scale, selected, onSelect } = props
+  const { towerId, unit, height, colours, scale, selected, onSelect, trimPx, blockedBy } = props
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `unit:${unit.id}`,
     data: { type: 'unit', towerId, unitId: unit.id, spec: { kind: unit.kind, width: unit.width, height } },
@@ -343,14 +393,15 @@ function PlacedUnit(props: {
     <button
       ref={setNodeRef}
       type="button"
-      className={`placed${isDragging ? ' is-dragging' : ''}`}
-      aria-label={`${describe(unit.kind, unit.width, height)}, select to edit`}
+      className={`placed${isDragging ? ' is-dragging' : ''}${blockedBy ? ' is-blocked' : ''}`}
+      title={blockedBy ? `Doesn't fit the printer. ${blockedBy}` : undefined}
+      aria-label={`${describe(unit.kind, unit.width, height)}${blockedBy ? `, doesn't fit the printer (${blockedBy})` : ''}, select to edit`}
       onClick={() => onSelect({ type: 'unit', towerId, unitId: unit.id })}
       {...listeners}
       {...attributes}
       aria-pressed={selected}
     >
-      <UnitBlock kind={unit.kind} width={unit.width} height={height} colours={colours} scale={scale} selected={selected} />
+      <UnitBlock kind={unit.kind} width={unit.width} height={height} colours={colours} scale={scale} selected={selected} trimPx={trimPx} />
     </button>
   )
 }
