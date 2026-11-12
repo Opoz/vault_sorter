@@ -440,12 +440,11 @@ function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: 
   }
 
   if (unit.baseplate !== 'none') {
-    const suffix = { plain: '', '1 handle': '_with 1 handle', '2 handles': '_with 2 handles' }[unit.baseplate]
     const dir = `${sizeDir}/gridfinity baseplate`
-    const whole = `${dir}/${w}${depth} baseplate${suffix}.stl`
+    const whole = `${dir}/${w}${depth} baseplate.stl`
     if (resolver.find(whole)) {
       wants.push({ tidyPath: whole, qty: 1, role: 'body', source: 'Instructions Manual p9 and p11' })
-    } else if (unit.baseplate === 'plain' && resolver.find(`${dir}/${w}${depth} baseplate part 1.stl`)) {
+    } else if (resolver.find(`${dir}/${w}${depth} baseplate part 1.stl`)) {
       wants.push(...splitOnly(dir, `${w}${depth} baseplate`, `${w}${depth} baseplate`))
     } else {
       throw new UnavailableError(`${label}: the Vault files have no baseplate "${unit.baseplate}" for ${w}${depth}`)

@@ -44,7 +44,7 @@ describe('partsForTower', () => {
       byFile(partsForTower(tower({ width, depth, rows: [{ height: '1F', units: [unit] }] }), opts))
 
     it('adds the chosen Gridfinity baseplate', () => {
-      expect(one(drawer('S', { baseplate: '2 handles' }))['S3 Baseplate_With 2 Handles.stl']).toBe(1)
+      expect(one(drawer('S', { baseplate: 'plain' }))['S3 Baseplate.stl']).toBe(1)
     })
 
     // Drawer Assembly p4: "place top and bottom geared rails into a box". Each rail file is a single rail.
@@ -65,11 +65,6 @@ describe('partsForTower', () => {
       expect(parts['x3 Runner Slide XL.stl']).toBe(2)
       expect(parts['x3 Runner Guide XL.stl']).toBe(2)
       expect(parts['x3 Runner Slide.stl']).toBeUndefined()
-    })
-
-    // The download only has M baseplates without handles or with 2 handles.
-    it('refuses an option the Vault files do not include', () => {
-      expect(() => one(drawer('M', { baseplate: '1 handle' }))).toThrow(/1 handle/)
     })
   })
 

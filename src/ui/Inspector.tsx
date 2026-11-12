@@ -1,4 +1,4 @@
-import { cloneElement, useId, type CSSProperties } from 'react'
+import { cloneElement, useId, useState, type CSSProperties } from 'react'
 import type { DepthChoice } from '../engine/depth'
 import type { Baseplate, Depth, RoofType, Width } from '../engine/model'
 import type { TowerDimensions } from '../engine/dimensions'
@@ -58,19 +58,10 @@ function UnitPanel({ editor, tower, unit, height }: { editor: Editor; tower: Edi
       <h2>{unit.kind === 'drawer' ? 'Drawer' : 'Sustainer'} {sizeCode}</h2>
       {unit.kind === 'drawer' ? (
         <>
-          <Field
-            label="Gridfinity baseplate"
-            why={unit.width === 'S' ? undefined : unit.width === 'M'
-              ? 'Baseplates with 1 handle are made for S drawers only.'
-              : 'Baseplates with handles are made for S and M drawers only.'}
-          >
+          <Field label="Gridfinity baseplate">
             <select value={unit.baseplate} onChange={(e) => set({ baseplate: e.target.value as Baseplate })}>
               <option value="none">None</option>
               <option value="plain">Plain</option>
-              <option value="1 handle" disabled={unit.width !== 'S'}>With 1 handle{unit.width !== 'S' ? ' (S only)' : ''}</option>
-              <option value="2 handles" disabled={unit.width !== 'S' && unit.width !== 'M'}>
-                With 2 handles{unit.width !== 'S' && unit.width !== 'M' ? ' (S and M only)' : ''}
-              </option>
             </select>
           </Field>
           <Field label="Key">
@@ -120,6 +111,8 @@ const ROOFS: { value: RoofType; label: string }[] = [
 ]
 
 function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTower; info: TowerInfo }) {
+  // A part picked in the parts list to print on its own; the print files section offers to save it.
+  const [reprint, setReprint] = useState<string | undefined>()
   const set = (patch: Parameters<typeof updateTower>[2]) => editor.apply(updateTower(editor.layout, tower.id, patch))
   const index = editor.layout.towers.indexOf(tower)
   const problems = rowProblems(tower)
@@ -256,12 +249,19 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
           colours={editor.layout.colours}
           printed={tower.printed ?? {}}
           onStep={(path, delta) => editor.apply(changePrinted(editor.layout, tower.id, { [path]: delta }))}
+          onReprint={info.depth ? setReprint : undefined}
         />
       )}
       {info.hardware && info.hardware.length > 0 && <HardwareSummary lines={info.hardware} />}
       {info.depth && info.parts && (() => {
         const built = toEngineTower(tower, info.depth)
-        return built ? <ExportPanel editor={editor} tower={built} towerId={tower.id} towerName={`Tower ${index + 1}`} /> : null
+        return built ? (
+          <ExportPanel
+            editor={editor} tower={built} towerId={tower.id} towerName={`Tower ${index + 1}`}
+            reprint={reprint && info.parts.some((l) => l.path === reprint) ? reprint : undefined}
+            onReprintDone={() => setReprint(undefined)}
+          />
+        ) : null
       })()}
 
       <div className="panel-actions">
@@ -333,8 +333,10 @@ function ProgressSummary({ parts, printed, onReset }: { parts: PartLine[]; print
   )
 }
 
-function PartsSummary({ parts, colours, printed, onStep }: {
+function PartsSummary({ parts, colours, printed, onStep, onReprint }: {
   parts: PartLine[]; colours: Colours; printed: Printed; onStep: (path: string, delta: number) => void
+  /** Print one copy of a part on its own, e.g. to replace one that failed or broke. */
+  onReprint?: (path: string) => void
 }) {
   const total = parts.reduce((s, l) => s + l.qty, 0)
   const flagged = parts.filter((l) => l.flags.length > 0)
@@ -371,6 +373,11 @@ function PartsSummary({ parts, colours, printed, onStep }: {
                   max={l.qty}
                   onStep={(d) => onStep(l.path, d)}
                 />
+                {onReprint && (
+                  <button type="button" className="link reprint-one" title="Save a print file with just one of this part" onClick={() => onReprint(l.path)}>
+                    Print one
+                  </button>
+                )}
               </td>
             </tr>
           ))}

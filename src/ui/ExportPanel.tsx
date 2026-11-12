@@ -4,7 +4,7 @@ import type { PackedPlate } from '../engine/plates'
 import { platesDone, type Printed } from '../engine/progress'
 import { changePrinted } from '../editor/layoutOps'
 import {
-  canStreamToFile, estimateProjectBytes, hasTemplate, platesFor, saveBambuProject, saveStlZip, type ExportRequest,
+  canStreamToFile, estimateProjectBytes, hasTemplate, platesFor, saveBambuProject, saveSingleStl, saveStlZip, type ExportRequest,
 } from '../export/exportTower'
 import {
   allowFolder, canRememberFolders, chooseFolder, filesSource, folderSource, rememberedFolder,
@@ -28,7 +28,12 @@ const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'Abort
 // A folder chosen through the folder input lasts for the visit, shared by every tower's panel.
 let sessionSource: VaultSource | undefined
 
-export function ExportPanel({ editor, tower, towerId, towerName }: { editor: Editor; tower: Tower; towerId: string; towerName: string }) {
+export function ExportPanel({ editor, tower, towerId, towerName, reprint, onReprintDone }: {
+  editor: Editor; tower: Tower; towerId: string; towerName: string
+  /** A part chosen in the parts list to print on its own (its path), e.g. after one failed or broke. */
+  reprint?: string
+  onReprintDone: () => void
+}) {
   const printer: Printer = editor.printer
   const remembers = canRememberFolders()
   const [folder, setFolder] = useState<FolderState>(() =>
@@ -80,6 +85,29 @@ export function ExportPanel({ editor, tower, towerId, towerName }: { editor: Edi
 
   async function allow(f: VaultFolder) {
     setFolder((await allowFolder(f)) ? { kind: 'ready', source: folderSource(f) } : { kind: 'needs-permission', folder: f })
+  }
+
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (reprint) box.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [reprint])
+
+  async function saveOne(path: string, kind: 'project' | 'stl') {
+    if (folder.kind !== 'ready') return
+    setMessage(null)
+    const part = path.split('/').pop()!.replace(/\.stl$/i, '')
+    try {
+      if (kind === 'project') {
+        const what = `Writing ${part}`
+        await saveBambuProject({ ...req, only: path, towerName: `${towerName} - ${part}` }, folder.source, (done, total) => setProgress({ done, total, what }))
+      } else {
+        await saveSingleStl({ ...req, only: path }, folder.source)
+      }
+      setMessage({ kind: 'done', text: `Saved ${part}, one copy${kind === 'project' ? ' on one plate, ready to slice' : ''}.` })
+      onReprintDone()
+    } catch (e) {
+      fail(e)
+    } finally {
+      setProgress(null)
+    }
   }
 
   async function save(kind: 'project' | 'zip') {
@@ -146,6 +174,21 @@ export function ExportPanel({ editor, tower, towerId, towerName }: { editor: Edi
         <p className="small muted">
           Bambu Studio settings for the {printerLabel(printer)} haven't been added yet, so you can save the STLs grouped by plate and arrange them in Bambu Studio yourself.
         </p>
+      )}
+      {reprint && (
+        <div ref={box} className="reprint" role="group" aria-label="Reprint one part">
+          <p className="small"><strong>Print just {reprint.split('/').pop()!.replace(/\.stl$/i, '')}</strong>: one copy, with this tower's colours and printer settings.</p>
+          <div className="panel-actions inline">
+            {templated && (
+              <button type="button" className="primary" disabled={folder.kind !== 'ready' || busy} onClick={() => saveOne(reprint, 'project')}>
+                Save Bambu project
+              </button>
+            )}
+            <button type="button" disabled={folder.kind !== 'ready' || busy} onClick={() => saveOne(reprint, 'stl')}>Save STL</button>
+            <button type="button" className="link" onClick={onReprintDone}>Cancel</button>
+          </div>
+          {folder.kind !== 'ready' && <p className="small muted">Choose your Vault folder above first: the part is read from it.</p>}
+        </div>
       )}
       {templated && !canStreamToFile() && estimate > MEMORY_WARNING_BYTES && (
         <p className="small export-warning">

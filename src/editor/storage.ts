@@ -40,6 +40,12 @@ export function upgradeLayout(raw: unknown): EditorLayout | undefined {
       const r = row as { id: string; height?: string; units?: { width: string }[]; columns?: unknown }
       if (r.columns || !r.units) return row
       return { id: r.id, columns: r.units.map((u) => ({ id: crypto.randomUUID(), width: u.width, units: [{ ...u, height: r.height }] })) }
+    }).map((row) => {
+      // Baseplates with handles are no longer offered (a drawer never needs them): those become plain.
+      const r = row as { columns?: { units?: { baseplate?: string }[] }[] }
+      if (!r.columns) return row
+      return { ...r, columns: r.columns.map((c) => ({ ...c, units: (c.units ?? []).map((u) =>
+        u.baseplate === '1 handle' || u.baseplate === '2 handles' ? { ...u, baseplate: 'plain' } : u) })) }
     }),
   }))
   return {

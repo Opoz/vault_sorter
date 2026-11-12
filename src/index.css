@@ -415,3 +415,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   .gap { transition: none; }
 }
 .export-warning { color: #6d4a0f; }
+
+/* Reprinting one part: the button in the parts list, and the box it opens under Print files. */
+.reprint-one { display: block; margin-top: 0.2rem; font-size: 0.75rem; white-space: nowrap; }
+.reprint { border: 1px solid var(--select); border-radius: 6px; padding: 0.5rem 0.6rem; margin: 0.5rem 0; background: rgb(47 111 235 / 0.06); }
+.reprint p { margin: 0 0 0.4rem; }

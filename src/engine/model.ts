@@ -8,7 +8,8 @@ export const WIDTHS: readonly Width[] = ['S', 'M', 'L', 'XL']
 export const DEPTHS: readonly Depth[] = [3, 4, 5, 6, 7]
 export const HEIGHTS: readonly Height[] = ['1F', '2F', '4F']
 
-export type Baseplate = 'none' | 'plain' | '1 handle' | '2 handles'
+/** A Gridfinity baseplate in a drawer. The download also has versions with handles; they aren't offered, as a drawer never needs them. */
+export type Baseplate = 'none' | 'plain'
 
 export interface DrawerUnit {
   readonly kind: 'drawer'

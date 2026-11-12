@@ -7,7 +7,7 @@ const H2S = { name: 'Bambu Lab H2S', bed: { width: 340, depth: 320 }, height: 34
 const heightsFor = (w: Width): Height[] => (w === 'XL' ? ['1F'] : [...HEIGHTS])
 
 const drawerOptions = (width: Width): Unit[] =>
-  (['none', 'plain', '1 handle', '2 handles'] as Baseplate[]).flatMap((baseplate) =>
+  (['none', 'plain'] as Baseplate[]).flatMap((baseplate) =>
     [false, true].flatMap((gearedRails) =>
       (['normal', 'hidden'] as const).map((key) => ({ kind: 'drawer', width, baseplate, gearedRails, key }) as Unit),
     ),

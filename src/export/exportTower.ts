@@ -6,7 +6,7 @@ import { strToU8, Zip, ZipPassThrough } from 'fflate'
 import type { Catalog } from '../engine/catalog'
 import type { PrinterBed } from '../engine/fit'
 import type { Tower } from '../engine/model'
-import { partsForTower } from '../engine/parts'
+import { partsForTower, type PartLine } from '../engine/parts'
 import { DENSITY_SPACING_MM, packPlates, type Density, type PackedPlate } from '../engine/plates'
 import templateIndex from '../data/bambu/index.json'
 import { primeTowerSpot, writeBambuProject } from './bambu3mf'
@@ -33,11 +33,21 @@ export interface ExportRequest {
   readonly plateEdgeMm: number
   readonly plateDensity: Density
   readonly colours: { readonly body: string; readonly accent: string; readonly secondary: string }
+  /** Print just this part (its path), one copy, e.g. to reprint one that failed or broke. */
+  readonly only?: string
+}
+
+/** One copy of a single part from a parts list, for a reprint. */
+export function onlyPart(lines: readonly PartLine[], path: string): PartLine[] {
+  const line = lines.find((l) => l.path === path)
+  if (!line) throw new Error('That part is no longer in this tower')
+  return [{ ...line, qty: 1 }]
 }
 
 /** The plates a Tower will be printed on, with the reserved areas of the printer kept clear. */
 export function platesFor(req: ExportRequest, primeTowerZone?: [number, number][]): PackedPlate[] {
-  const lines = partsForTower(req.tower, { catalog: req.catalog, printer: req.printer, splitParts: req.splitParts })
+  const all = partsForTower(req.tower, { catalog: req.catalog, printer: req.printer, splitParts: req.splitParts })
+  const lines = req.only ? onlyPart(all, req.only) : all
   const excluded = [...(req.printer.excluded ?? []), ...(primeTowerZone ? [primeTowerZone] : [])]
   return packPlates(lines, {
     catalog: req.catalog, printer: { ...req.printer, excluded }, allowColourMixing: req.allowColourMixing,
@@ -94,6 +104,19 @@ export async function saveBambuProject(req: ExportRequest, folder: VaultSource, 
       { plates, printer: req.printer, settings, colours: req.colours, meshFor: meshReader(folder), onProgress },
       (chunk) => out.write(chunk),
     )
+    await out.close()
+  } catch (e) {
+    await out.abort().catch(() => {})
+    throw e
+  }
+}
+
+/** Saves one part's STL as it is, for a reprint. Shows the save picker, so call it from a click. */
+export async function saveSingleStl(req: ExportRequest & { only: string }, folder: VaultSource) {
+  const name = req.only.split('/').pop()!
+  const out = await chooseFile(name, 'STL file', '.stl', 'model/stl')
+  try {
+    await out.write(new Uint8Array(await (await folder.readFile(req.only)).arrayBuffer()))
     await out.close()
   } catch (e) {
     await out.abort().catch(() => {})

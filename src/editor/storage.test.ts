@@ -112,6 +112,20 @@ describe('layout storage', () => {
     expect(row.columns.map((c) => [c.width, c.units.map((u) => [u.id, u.height])])).toEqual([['S', [['u1', '2F']]], ['S', [['u2', '2F']]]])
   })
 
+  // Baseplates with handles were dropped from the choices: a drawer never needs them.
+  it('turns a baseplate with handles from an older layout into a plain one', () => {
+    const unit = { id: 'u1', kind: 'drawer', width: 'S', height: '1F', baseplate: '2 handles', gearedRails: false, key: 'normal' }
+    const old = { ...newLayout('Handles'), id: 'bp', towers: [{
+      id: 't', width: 'S', depth: null, roof: 'grid', bottom: 'none', backbone: 'none',
+      rows: [{ id: 'r', columns: [{ id: 'c', width: 'S', units: [unit] }] }],
+    }] }
+    const storage = memoryStorage({ 'vault-planner:layout:bp': JSON.stringify({ schema: 1, layout: old }) })
+
+    const loaded = createLayoutStore(storage).load('bp')!.towers[0].rows[0].columns[0].units[0]
+
+    expect(loaded).toMatchObject({ kind: 'drawer', baseplate: 'plain' })
+  })
+
   it('keeps working in memory when the browser refuses storage, and says so', () => {
     const store = createLayoutStore(brokenStorage)
     const layout = newLayout('Private window')
