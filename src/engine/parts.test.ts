@@ -225,4 +225,44 @@ describe('partsForTower', () => {
     })
     expect(sustainers).toMatchObject({ 'LOCK OUTER PART 1F.stl': 'secondary', 'LOCK HOLDER.stl': 'body' })
   })
+
+  // Modifications pp12–15 and Mounting Instructions pp1–9: what attaches to the back of a tower.
+  describe('back attachments', () => {
+    const mRows: Tower['rows'] = [
+      { height: '2F', units: [drawer('M')] }, { height: '1F', units: [drawer('M')] }, { height: '4F', units: [drawer('M')] },
+    ]
+    const back = (t: Partial<Tower>) => byFile(partsForTower(tower({ width: 'M', depth: 3, rows: mRows, ...t }), opts))
+
+    it('adds a stationary handle sized to the tower', () => {
+      expect(back({ backbone: 'matching', stationaryHandle: true })['M Stationary Handle.stl']).toBe(1)
+    })
+
+    it('adds the pull-out handle, its lock and two knobs', () => {
+      expect(back({ backbone: 'matching', pullOutHandle: true })).toMatchObject({
+        'M Pull-out Handle.stl': 1, 'M Pull-out Handle Lock.stl': 1, 'Handle Lock Knob Part 1.stl': 2, 'Handle Lock Knob Part 2.stl': 2,
+      })
+    })
+
+    it('adds one pegboard board per backbone, matching its height', () => {
+      expect(back({ backbone: 'matching', pegboard: 'skadis' })).toMatchObject({ 'M2F.stl': 3, 'M1F.stl': 1 })
+    })
+
+    it('adds a wall mount per unit, matching its size, each with a part for the wall', () => {
+      const parts = byFile(partsForTower(tower({
+        width: 'L', depth: 3, wallMount: true, rows: [{ height: '1F', units: [drawer('S'), drawer('S')] }, { height: '2F', units: [drawer('L')] }],
+      }), opts))
+      expect(parts).toMatchObject({ 'S1F Wall Mount.stl': 2, 'L2F Wall Mount.stl': 1, 'Wall Mount Second Part.stl': 3 })
+    })
+
+    it('refuses handles or a pegboard without a backbone to fix them to', () => {
+      expect(() => back({ pullOutHandle: true })).toThrow(/backbone/)
+      expect(() => back({ stationaryHandle: true })).toThrow(/backbone/)
+      expect(() => back({ pegboard: 'ussa' })).toThrow(/backbone/)
+    })
+
+    it('refuses a wall-mounted tower that also has a backbone or stands on a base', () => {
+      expect(() => back({ wallMount: true, backbone: 'matching' })).toThrow(/wall/i)
+      expect(() => back({ wallMount: true, bottom: 'wheels' })).toThrow(/wall/i)
+    })
+  })
 })

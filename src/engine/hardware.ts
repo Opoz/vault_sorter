@@ -104,6 +104,30 @@ export function hardwareForTower(tower: Tower): HardwareLine[] {
     })
   }
 
+  if (tower.stationaryHandle) wants.push({ item: 'M4 × 60 mm bolt', qty: 8, source: 'Instructions Manual p3' })
+  if (tower.pullOutHandle) {
+    wants.push(
+      { item: 'M6 × 30 mm bolt', qty: 4, source: 'Instructions Manual p3' },
+      {
+        item: 'M6 × 35 mm hex bolt', qty: 2, source: 'Instructions Manual p3; Modifications p13',
+        flags: [{ kind: 'conflict', note: 'The hardware list says M6 35 mm; the assembly step says "Hex M4 35MM bolts".', source: 'Instructions Manual p3; Modifications p13' }],
+      },
+      { item: 'M6 × 8 × 8 heat insert', qty: 2, source: 'Instructions Manual p3; Modifications p13' },
+      { item: 'M16 threaded rod, cut to the tower height', qty: 2, source: 'Instructions Manual p3; Modifications p14' },
+    )
+  }
+  if (tower.pegboard) {
+    const boards = tower.rows.reduce((n, r) => n + (r.height === '4F' ? 2 : 1), 0)
+    wants.push({ item: 'M4 × 40 mm bolt', qty: 4 * boards, source: 'Instructions Manual p3' })
+  }
+  if (tower.wallMount) {
+    const units = tower.rows.reduce((n, r) => n + r.units.length, 0)
+    wants.push({
+      item: 'Wall screws (with anchors if needed) for the wall mount second parts', qty: units, source: 'Mounting Instructions p6',
+      flags: [{ kind: 'inferred', note: 'The manual says to use anchors or wood screws to suit the wall, with no size or count; listed per second part.', source: 'Mounting Instructions p6' }],
+    })
+  }
+
   return combine(wants)
 }
 

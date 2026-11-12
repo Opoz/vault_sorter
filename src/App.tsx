@@ -14,7 +14,7 @@ import {
 } from './editor/layoutOps'
 import { HEIGHTS, WIDTHS, type Depth, type Unit } from './engine/model'
 import { catalog, printerLabel, printers, printerSource } from './ui/data'
-import { belowBaseMm, HANDLE_MM, towerHeightMm, TYRE_WIDTH_MM, WIDTH_MM } from './ui/dims'
+import { belowBaseMm, HANDLE_MM, PULL_OUT, towerHeightMm, TYRE_WIDTH_MM, WIDTH_MM } from './ui/dims'
 import { Inspector, type TowerInfo } from './ui/Inspector'
 import { Palette, PALETTE_SCALE } from './ui/Palette'
 import { TowerView } from './ui/TowerView'
@@ -37,7 +37,8 @@ function useCanvasScale(layout: EditorLayout) {
     observer.current.observe(el)
   }, [])
   const tallest = Math.max(400, ...layout.towers.map((t) =>
-    towerHeightMm(t.rows, t.roof, t.bottom !== 'none') + belowBaseMm(t.bottom) + (t.roof === 'grid' ? HANDLE_MM.height : 0)))
+    towerHeightMm(t.rows, t.roof, t.bottom !== 'none') + belowBaseMm(t.bottom) +
+      (t.pullOutHandle ? PULL_OUT.extendedMm : t.roof === 'grid' ? HANDLE_MM.height : 0)))
   // Each tower's width, plus the wheels standing beside it; the extra 250 mm is the "Add a tower" spot.
   const across = layout.towers.reduce((sum, t) =>
     sum + (t.width ? WIDTH_MM[t.width] : 250) + (t.bottom === 'wheels' ? 2 * (TYRE_WIDTH_MM + 4) : 0), 0) + 250

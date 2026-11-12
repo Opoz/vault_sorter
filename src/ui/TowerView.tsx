@@ -2,7 +2,7 @@ import { useDraggable, useDroppable } from '@dnd-kit/core'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Depth } from '../engine/model'
 import { missingWidth, rowProblems, type Colours, type EditorRow, type EditorTower, type EditorUnit } from '../editor/layoutOps'
-import { BASE_MM, belowBaseMm, CASTER, FEET_INSET_MM, FOOT_MM, HANDLE_MM, HEAVYWEIGHT_HANDLE_MM, LIP_MM, ROOF_MM, towerHeightMm, TYRE_WIDTH_MM, WHEEL_MM, WIDTH_MM, rowHeightMm } from './dims'
+import { BASE_MM, belowBaseMm, CASTER, FEET_INSET_MM, FOOT_MM, HANDLE_MM, HEAVYWEIGHT_HANDLE_MM, PULL_OUT, LIP_MM, ROOF_MM, towerHeightMm, TYRE_WIDTH_MM, WHEEL_MM, WIDTH_MM, rowHeightMm } from './dims'
 import { describe } from './text'
 import { UnitBlock } from './UnitBlock'
 import type { Selection } from './useEditor'
@@ -61,12 +61,14 @@ export function TowerView({ tower, index, colours, scale, depth, heightMm: measu
           <div
             className="tower-stack"
             style={{
-              paddingTop: tower.roof === 'grid' ? HANDLE_MM.height * scale : undefined,
+              // Room above the roof for its handle, unless the pull-out handle (taller) already makes room.
+              paddingTop: tower.roof === 'grid' && !tower.pullOutHandle ? HANDLE_MM.height * scale : undefined,
               paddingBottom: belowBaseMm(tower.bottom) * scale || undefined,
               // Wheels stand outside the base: keep their width free on both sides.
               marginInline: tower.bottom === 'wheels' ? (TYRE_WIDTH_MM + 4) * scale : undefined,
             }}
           >
+            {tower.pullOutHandle && width && <PullOutHandle width={width} scale={scale} />}
             {tower.roof !== 'none' && tower.roof !== 'under table mount' && (
               <div
                 className={`tower-roof${tower.roof === 'heavyweight' ? ' roof-heavyweight' : ''}`}
@@ -123,6 +125,27 @@ export function TowerView({ tower, index, colours, scale, depth, heightMm: measu
         <figcaption className="dim dim-width">{WIDTH_MM[width].toFixed(1)} mm wide</figcaption>
       )}
     </figure>
+  )
+}
+
+/**
+ * The pull-out handle, pulled out, seen from the front (Instructions Manual p13): it stands behind the tower on two
+ * rods that run down the backbone, so the rods carry on behind the roof and modules.
+ */
+function PullOutHandle({ width, scale }: { width: keyof typeof PULL_OUT.gripMm; scale: number }) {
+  const px = (mm: number) => mm * scale
+  const grip = PULL_OUT.gripMm[width]
+  return (
+    <div className="pullout" style={{ height: px(PULL_OUT.extendedMm) }} title="Pull-out handle">
+      <span className="pullout-grip" style={{ width: px(grip), height: px(PULL_OUT.gripHeightMm), borderRadius: px(8) }} />
+      {(['left', 'right'] as const).map((side) => (
+        <span
+          key={side}
+          className="pullout-rod"
+          style={{ width: Math.max(px(PULL_OUT.rodMm), 2), [side]: `calc(50% - ${px(grip / 2 - PULL_OUT.rodMm)}px)`, top: px(PULL_OUT.gripHeightMm) }}
+        />
+      ))}
+    </div>
   )
 }
 

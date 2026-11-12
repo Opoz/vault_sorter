@@ -47,6 +47,10 @@ const SOURCES = {
   roof: 'Instructions Manual p10 and p18',
   bottom: 'Modifications pp2–6 and p17',
   backbone: 'Modifications pp7–11',
+  stationaryHandle: 'Modifications p12',
+  pullOutHandle: 'Modifications pp13–14; Instructions Manual p13',
+  pegboard: 'Modifications p15',
+  wallMount: 'Mounting Instructions pp1–9',
 }
 const from = (source: string, wants: Want[]): Want[] => wants.map((w) => ({ ...w, source: w.source ?? source }))
 
@@ -59,6 +63,7 @@ export function partsForTower(tower: Tower, options: PartsOptions): PartLine[] {
     ...from(SOURCES.roof, roofParts(tower, resolver)),
     ...from(SOURCES.bottom, bottomParts(tower, ctx)),
     ...from(SOURCES.backbone, backboneParts(tower)),
+    ...backAttachmentParts(tower),
   ]
   for (const row of tower.rows) {
     for (const unit of row.units) {
@@ -83,6 +88,14 @@ const ROW_FILLS: Record<Width, readonly string[]> = {
 function validateTower(tower: Tower) {
   if (tower.roof === 'under table mount' && tower.bottom !== 'none') {
     throw new UnavailableError('An under-table tower hangs from its roof, so it has no wheels, feet or casters')
+  }
+  if (tower.backbone === 'none' && (tower.stationaryHandle || tower.pullOutHandle || tower.pegboard)) {
+    throw new UnavailableError('Handles and pegboards fix to a backbone, so the tower needs one')
+  }
+  if (tower.wallMount) {
+    if (tower.backbone !== 'none') throw new UnavailableError('Wall mounts and a backbone both fix to the back of the modules; a wall-mounted tower has no backbone')
+    if (tower.bottom !== 'none') throw new UnavailableError('A wall-mounted tower hangs on the wall, so it has no wheels, feet or casters')
+    if (tower.roof === 'under table mount') throw new UnavailableError('A tower hangs either on a wall or under a table, not both')
   }
   tower.rows.forEach((row, i) => {
     const fill = row.units.map((u) => u.width).join('+')
@@ -185,6 +198,53 @@ function backboneParts(tower: Tower): Want[] {
     const h = row.height === '1F' ? '1f' : '2f'
     return [{ tidyPath: `${MODS}/backbone/${prefix}${h} backbone.stl`, qty: row.height === '4F' ? 2 : 1, role: 'body', flags: [flag] }]
   })
+}
+
+/** Handles, pegboard boards and wall mounts: what attaches to the back of a Tower. */
+function backAttachmentParts(tower: Tower): Want[] {
+  const w = tower.width.toLowerCase()
+  const wants: Want[] = []
+  if (tower.stationaryHandle) {
+    wants.push(...from(SOURCES.stationaryHandle, [{ tidyPath: `${MODS}/stationary handle/${w} stationary handle.stl`, qty: 1, role: 'secondary' }]))
+  }
+  if (tower.pullOutHandle) {
+    const universal = tower.backbone === 'universal'
+    const lock: Want[] = universal
+      ? [{
+        tidyPath: `${MODS}/backbone/universal pull-out handle lock.stl`, qty: 2, role: 'body',
+        flags: [{ kind: 'inferred', note: 'The universal lock is narrow (89 mm) and holds one rod, so two are assumed, one per rod.', source: 'Modifications pp13–14; Universal Pull-out Handle Lock size' }],
+      }]
+      : [
+        { tidyPath: `${MODS}/backbone/${w} pull-out handle lock.stl`, qty: 1, role: 'body' },
+        ...(w === 's' ? [{ tidyPath: `${MODS}/backbone/s pull-out handle lock part 2.stl`, qty: 1, role: 'body' as const }] : []),
+      ]
+    wants.push(...from(SOURCES.pullOutHandle, [
+      { tidyPath: `${MODS}/pull-out handle/${w} pull-out handle.stl`, qty: 1, role: 'secondary' },
+      ...lock,
+      // Two knobs tighten the lock, one per rod (Modifications p13): a knob and its cap.
+      { tidyPath: `${MODS}/backbone/handle lock knob part 1.stl`, qty: 2, role: 'body' },
+      { tidyPath: `${MODS}/backbone/handle lock knob part 2.stl`, qty: 2, role: 'secondary' },
+    ]))
+  }
+  if (tower.pegboard) {
+    const dir = `${MODS}/pegboard attachment/${tower.pegboard === 'skadis' ? 'ikea skadis' : 'ussa'} pegboard`
+    const flag: Flag = { kind: 'inferred', note: 'One pegboard board per backbone, matching its height (they come in the same 1F and 2F sizes).', source: 'Modifications p15; board sizes' }
+    wants.push(...from(SOURCES.pegboard, tower.rows.map((row): Want => ({
+      tidyPath: `${dir}/${w}${row.height === '1F' ? '1f' : '2f'}.stl`, qty: row.height === '4F' ? 2 : 1, role: 'body', flags: [flag],
+    }))))
+  }
+  if (tower.wallMount) {
+    const second: Flag = { kind: 'inferred', note: 'One second part on the wall for each wall mount; the manual shows them but gives no count.', source: 'Mounting Instructions pp6–9' }
+    for (const row of tower.rows) {
+      for (const unit of row.units) {
+        wants.push(...from(SOURCES.wallMount, [
+          { tidyPath: `${MODS}/wall mounts/${unit.width.toLowerCase()}${row.height.toLowerCase()} wall mount.stl`, qty: 1, role: 'body' },
+          { tidyPath: `${MODS}/wall mounts/wall mount second part.stl`, qty: 1, role: 'body', flags: [second] },
+        ]))
+      }
+    }
+  }
+  return wants
 }
 
 interface Ctx extends Required<PartsOptions> {

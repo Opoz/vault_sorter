@@ -162,12 +162,14 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
       </Field>
       <Field
         label="Bottom"
-        why={tower.roof === 'under table mount' ? 'An under-table tower hangs from its roof, so it has no base. Choose another roof to add one.' : undefined}
+        why={tower.roof === 'under table mount'
+          ? 'An under-table tower hangs from its roof, so it has no base. Choose another roof to add one.'
+          : tower.wallMount ? 'A wall-mounted tower hangs on the wall, so it has no base. Untick the wall mount to add one.' : undefined}
         whyDisables
       >
         <select
           value={tower.bottom}
-          disabled={tower.roof === 'under table mount'}
+          disabled={tower.roof === 'under table mount' || !!tower.wallMount}
           onChange={(e) => set({ bottom: e.target.value as EditorTower['bottom'] })}
         >
           <option value="none">Stands on the floor</option>
@@ -176,13 +178,50 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
           <option value="casters">Base with casters</option>
         </select>
       </Field>
-      <Field label="Backbone">
-        <select value={tower.backbone} onChange={(e) => set({ backbone: e.target.value as EditorTower['backbone'] })}>
+      <CheckField
+        label="Hang on a wall (a wall mount on the back of each module)"
+        checked={!!tower.wallMount}
+        onChange={(wallMount) => set({ wallMount })}
+        why={tower.roof === 'under table mount' ? 'This tower hangs under a table. Choose another roof to hang it on a wall instead.' : undefined}
+      />
+      <Field
+        label="Backbone"
+        why={tower.wallMount ? 'Wall mounts and a backbone both fix to the back of the modules. Untick the wall mount to add a backbone.' : undefined}
+        whyDisables
+      >
+        <select
+          value={tower.backbone}
+          disabled={!!tower.wallMount}
+          onChange={(e) => set({ backbone: e.target.value as EditorTower['backbone'] })}
+        >
           <option value="none">None</option>
           <option value="matching">Matching width</option>
           <option value="universal">Universal</option>
         </select>
       </Field>
+      {(() => {
+        const noBackbone = tower.wallMount
+          ? 'These fix to a backbone, which a wall-mounted tower has none of.'
+          : tower.backbone === 'none' ? 'These fix to a backbone; choose one above to add them.' : undefined
+        return (
+          <fieldset className="attachments">
+            <legend>On the backbone</legend>
+            <CheckField label="Stationary handle" checked={!!tower.stationaryHandle} onChange={(stationaryHandle) => set({ stationaryHandle })} why={noBackbone} />
+            <CheckField label="Pull-out handle (telescoping, on two rods)" checked={!!tower.pullOutHandle} onChange={(pullOutHandle) => set({ pullOutHandle })} why={noBackbone} />
+            <Field label="Pegboard" why={noBackbone} whyDisables>
+              <select
+                value={tower.pegboard ?? 'none'}
+                disabled={!!noBackbone}
+                onChange={(e) => set({ pegboard: e.target.value === 'none' ? undefined : e.target.value as 'skadis' | 'ussa' })}
+              >
+                <option value="none">None</option>
+                <option value="skadis">IKEA Skadis boards</option>
+                <option value="ussa">USSA pegboard boards</option>
+              </select>
+            </Field>
+          </fieldset>
+        )
+      })()}
 
       {info.dimensions && <SizeSummary dims={info.dimensions} />}
       {info.grams && <FilamentSummary grams={info.grams} colours={editor.layout.colours} />}
@@ -324,6 +363,20 @@ function PartsSummary({ parts, colours, printed, onStep }: {
         </tbody>
       </table>
     </details>
+  )
+}
+
+/** A checkbox with the same "why it's unavailable" note as Field; the note also disables it. */
+function CheckField({ label, checked, onChange, why }: { label: string; checked: boolean; onChange: (checked: boolean) => void; why?: string }) {
+  const id = useId()
+  return (
+    <div className="check-field" title={why}>
+      <label className="check">
+        <input type="checkbox" checked={checked} disabled={!!why} aria-describedby={why ? id : undefined} onChange={(e) => onChange(e.target.checked)} />
+        {label}
+      </label>
+      {why && <span id={id} className="field-why is-off">Unavailable: {why}</span>}
+    </div>
   )
 }
 

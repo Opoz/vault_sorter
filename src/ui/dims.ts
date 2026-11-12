@@ -30,6 +30,17 @@ export const belowBaseMm = (bottom: 'none' | 'feet' | 'wheels' | 'casters') =>
  * Top Handle as seen from the front: measured 126 mm long and 51 mm tall. The loop's thickness and corner are
  * drawn from USSA's renders, not measured.
  */
+/**
+ * Pull-out handle as drawn from the front (Instructions Manual p13): the grip's measured width per tower width
+ * and two M16 rods. How far it's drawn pulled out is a choice for the picture, not a measurement.
+ */
+export const PULL_OUT = {
+  gripMm: { S: 112.8, M: 202, L: 277.6, XL: 366.8 } as Record<'S' | 'M' | 'L' | 'XL', number>,
+  gripHeightMm: 35,
+  rodMm: 16,
+  extendedMm: 220,
+}
+
 /** Heavyweight Roof Handle, measured: a bar 156.5 mm long and 29.5 mm thick. */
 export const HEAVYWEIGHT_HANDLE_MM = { length: 156.5, thickness: 29.5 }
 export const HANDLE_MM = { length: 126, height: 51, top: 13, side: 22, bottom: 17, corner: 16 }

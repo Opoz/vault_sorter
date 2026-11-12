@@ -28,6 +28,10 @@ export interface EditorTower {
   readonly roof: RoofType
   readonly bottom: Bottom
   readonly backbone: Tower['backbone']
+  readonly stationaryHandle?: boolean
+  readonly pullOutHandle?: boolean
+  readonly pegboard?: 'skadis' | 'ussa'
+  readonly wallMount?: boolean
   /** How many of each part file have been printed so far (print progress); absent until something is. */
   readonly printed?: Printed
 }
@@ -212,13 +216,23 @@ export function setTowerWidth(layout: EditorLayout, towerId: string, width: Widt
   })
 }
 
-export type TowerPatch = Partial<Pick<EditorTower, 'depth' | 'roof' | 'bottom' | 'backbone'>>
+export type TowerPatch = Partial<Pick<EditorTower,
+  'depth' | 'roof' | 'bottom' | 'backbone' | 'stationaryHandle' | 'pullOutHandle' | 'pegboard' | 'wallMount'>>
 
+/**
+ * Change a Tower's settings. Settings the change rules out are cleared rather than refused, so picking an option
+ * always works: an under-table tower loses its base, a wall-mounted one its backbone and base, and handles and
+ * pegboard go with the backbone they fix to.
+ */
 export function updateTower(layout: EditorLayout, towerId: string, patch: TowerPatch): OpResult {
   return withTower(layout, towerId, (tower) => {
-    const next = { ...tower, ...patch }
-    // An under-table tower hangs from its roof, so it can't stand on wheels, feet or casters.
-    if (next.roof === 'under table mount') return { ...next, bottom: 'none' }
+    let next: EditorTower = { ...tower, ...patch }
+    // Whichever way of hanging the tower was just chosen wins.
+    if (patch.wallMount && next.roof === 'under table mount') next = { ...next, roof: 'grid' }
+    if (patch.roof === 'under table mount') next = { ...next, wallMount: false }
+    if (next.roof === 'under table mount' || next.wallMount) next = { ...next, bottom: 'none' }
+    if (next.wallMount) next = { ...next, backbone: 'none' }
+    if (next.backbone === 'none') next = { ...next, stationaryHandle: false, pullOutHandle: false, pegboard: undefined }
     return next
   })
 }
@@ -287,5 +301,9 @@ export function toEngineTower(tower: EditorTower, depth: Depth): Tower | null {
     roof: tower.roof,
     bottom: tower.bottom,
     backbone: tower.backbone,
+    stationaryHandle: tower.stationaryHandle ?? false,
+    pullOutHandle: tower.pullOutHandle ?? false,
+    pegboard: tower.pegboard,
+    wallMount: tower.wallMount ?? false,
   }
 }

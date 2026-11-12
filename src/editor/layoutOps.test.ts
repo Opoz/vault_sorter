@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addTower, changePrinted, duplicateUnit, moveRow, newLayout, placeUnit, removeUnit, rowProblems, setTowerWidth, updateTower,
+  addTower, changePrinted, duplicateUnit, moveRow, newLayout, placeUnit, removeUnit, rowProblems, setTowerWidth, toEngineTower, updateTower,
   type EditorLayout, type OpResult, type UnitSpec,
 } from './layoutOps'
 
@@ -145,5 +145,30 @@ describe('layout editing', () => {
 
     expect(once.towers[0].printed).toEqual({ 'A/Key.stl': 2, 'A/Module.stl': 1 })
     expect(undone.towers[0].printed).toEqual({ 'A/Key.stl': 1 })
+  })
+
+  it('drops handles and pegboard when the backbone they fix to goes', () => {
+    const { layout, towerId } = towerWith(drawer('M'))
+    const fitted = ok(updateTower(layout, towerId, { backbone: 'matching', pullOutHandle: true, stationaryHandle: true, pegboard: 'skadis' }))
+
+    const bare = ok(updateTower(fitted, towerId, { backbone: 'none' })).towers[0]
+
+    expect([bare.pullOutHandle, bare.stationaryHandle, bare.pegboard]).toEqual([false, false, undefined])
+  })
+
+  it('takes away the backbone, base and under-table roof when a tower goes on the wall', () => {
+    const { layout, towerId } = towerWith(drawer('M'))
+    const fitted = ok(updateTower(layout, towerId, { backbone: 'matching', pullOutHandle: true, bottom: 'wheels', roof: 'grid' }))
+
+    const hung = ok(updateTower(fitted, towerId, { wallMount: true })).towers[0]
+
+    expect([hung.backbone, hung.pullOutHandle, hung.bottom, hung.roof]).toEqual(['none', false, 'none', 'grid'])
+  })
+
+  it('passes the back attachments on to the parts engine', () => {
+    const { layout, towerId } = towerWith(drawer('M'))
+    const fitted = ok(updateTower(layout, towerId, { backbone: 'matching', pullOutHandle: true, pegboard: 'ussa' })).towers[0]
+
+    expect(toEngineTower(fitted, 3)).toMatchObject({ pullOutHandle: true, pegboard: 'ussa', stationaryHandle: false, wallMount: false })
   })
 })

@@ -75,4 +75,23 @@ describe('hardwareForTower', () => {
     const lines = hardwareForTower(tower({ backbone: 'matching', rows: rowsOf(drawer('M'), '1F', '2F') }))
     expect(qty(lines, 'M4 × 60–100 mm bolt')).toBe(8)
   })
+
+  // Instructions Manual p3, "Modifications".
+  it('lists the bolts for a stationary handle and the bolts, inserts and rods for a pull-out handle', () => {
+    const lines = hardwareForTower(tower({ backbone: 'matching', stationaryHandle: true, pullOutHandle: true }))
+
+    expect(qty(lines, 'M4 × 60 mm bolt')).toBe(8)
+    expect(qty(lines, 'M6 × 30 mm bolt')).toBe(4)
+    expect(qty(lines, 'M6 × 8 × 8 heat insert')).toBe(2)
+    expect(qty(lines, 'M16 threaded rod, cut to the tower height')).toBe(2)
+    // p3 lists M6 35 mm; the step on Modifications p13 says "Hex M4 35MM".
+    const lock = lines.find((l) => l.item === 'M6 × 35 mm hex bolt')
+    expect(lock?.qty).toBe(2)
+    expect(lock?.flags.some((f) => f.kind === 'conflict')).toBe(true)
+  })
+
+  it('adds four M4 40 mm bolts per pegboard board', () => {
+    const lines = hardwareForTower(tower({ backbone: 'matching', pegboard: 'ussa', rows: rowsOf(drawer('M'), '1F', '4F') }))
+    expect(qty(lines, 'M4 × 40 mm bolt')).toBe(4 * 3)
+  })
 })

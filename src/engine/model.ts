@@ -44,6 +44,14 @@ export interface Tower {
   readonly roof: RoofType
   readonly bottom: Bottom
   readonly backbone: 'none' | 'matching' | 'universal'
+  /** A fixed handle on the backbone (Modifications p12). */
+  readonly stationaryHandle?: boolean
+  /** A telescoping handle on two rods, locked to the backbone (Modifications pp13–14). */
+  readonly pullOutHandle?: boolean
+  /** Pegboard boards on the backbone, for IKEA Skadis or USSA pegboard accessories (Modifications p15). */
+  readonly pegboard?: 'skadis' | 'ussa'
+  /** Hung on a wall by mounts on the back of each module (Mounting Instructions pp1–9). */
+  readonly wallMount?: boolean
 }
 
 export interface Layout {
