@@ -17,6 +17,8 @@ export type Material = 'PLA' | 'TPU'
 export interface PlacedItem {
   readonly path: string
   readonly role: ColourRole
+  /** The colour the part is painted, when not its Colour role's. */
+  readonly colour?: string
   readonly material: Material
   /** Turn about the vertical axis, applied to the part as stored. */
   readonly angleDeg: number
@@ -31,6 +33,8 @@ export interface PackedPlate {
   /** 1-based, in printing order. */
   readonly index: number
   readonly role: ColourRole | 'mixed'
+  /** The painted colour every part on the plate shares, for a plate of painted parts. */
+  readonly colour?: string
   readonly material: Material
   readonly items: readonly PlacedItem[]
   /**
@@ -87,11 +91,13 @@ export function packPlates(lines: readonly PartLine[], options: PackOptions): Pa
   const margins = [...new Set([margin, Math.min(margin, DEFAULT_EDGE_MARGIN_MM), Math.min(margin, tightMargin)])]
 
   // One entry per printed part, grouped by what may share a plate.
-  const groups = new Map<string, { role: ColourRole | 'mixed'; material: Material; parts: { line: PartLine; part: PartMeasure }[] }>()
+  // Painted parts (issue #7) are their own colour: their own plates, unless colours may mix.
+  const groups = new Map<string, { role: ColourRole | 'mixed'; colour?: string; material: Material; parts: { line: PartLine; part: PartMeasure }[] }>()
   for (const line of lines) {
     const material = materialOf(line.path)
-    const key = material === 'TPU' ? 'tpu' : options.allowColourMixing ? 'pla' : line.role
-    const group = groups.get(key) ?? { role: material === 'TPU' || options.allowColourMixing ? 'mixed' : line.role, material, parts: [] }
+    const own = material !== 'TPU' && !options.allowColourMixing
+    const key = material === 'TPU' ? 'tpu' : options.allowColourMixing ? 'pla' : line.colour ?? line.role
+    const group = groups.get(key) ?? { role: own ? line.role : 'mixed', ...(own && line.colour ? { colour: line.colour } : {}), material, parts: [] }
     if (material === 'TPU') group.role = line.role
     for (let i = 0; i < line.qty; i++) group.parts.push({ line, part: options.catalog.get(line.path) })
     groups.set(key, group)
@@ -99,7 +105,9 @@ export function packPlates(lines: readonly PartLine[], options: PackOptions): Pa
 
   const plates: Omit<PackedPlate, 'index' | 'edgeMm'>[] = []
   const order = ['body', 'accent', 'secondary', 'pla', 'tpu']
-  for (const key of [...groups.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b))) {
+  // Painted colours print after the three roles, before TPU.
+  const rank = (key: string) => (order.includes(key) ? order.indexOf(key) : 2.5)
+  for (const key of [...groups.keys()].sort((a, b) => rank(a) - rank(b))) {
     const group = groups.get(key)!
     // `front`: how far forward (packer y, from the back) the large parts placed so far reach, spacing included;
     // `left`/`right`: how far across. Small parts all aim for the middle of that front edge, so they gather
@@ -112,7 +120,7 @@ export function packPlates(lines: readonly PartLine[], options: PackOptions): Pa
       .sort((a, b) => b.rect.w * b.rect.h - a.rect.w * a.rect.h)
 
     for (const { line, part, rect } of shapes) {
-      const base = { path: line.path, role: line.role, material: group.material }
+      const base = { path: line.path, role: line.role, ...(line.colour ? { colour: line.colour } : {}), material: group.material }
       const small = Math.max(rect.w, rect.h, part.size[2]) <= SMALL_PART_MM
       // A part with supports is packed with room for them on every side (on top of the usual spacing between
       // parts), when the plate allows; the part sits in the middle of that room.
@@ -198,10 +206,10 @@ export function packPlates(lines: readonly PartLine[], options: PackOptions): Pa
       })
     }
     for (const sheet of sheets) {
-      plates.push({ role: group.role, material: group.material, items: centred(sheet.items, options, sheet.margin) })
+      plates.push({ role: group.role, ...(group.colour ? { colour: group.colour } : {}), material: group.material, items: centred(sheet.items, options, sheet.margin) })
     }
     for (const items of diagonalPlates(diagonal, group.material, options, margins, spacing)) {
-      plates.push({ role: group.role, material: group.material, items })
+      plates.push({ role: group.role, ...(group.colour ? { colour: group.colour } : {}), material: group.material, items })
     }
   }
   return plates.map((p, i) => ({ ...p, index: i + 1, edgeMm: edgeGap(p.items, options) }))
@@ -265,7 +273,7 @@ function diagonalPlates(
       const offset = v + rect.h / 2
       v += rect.h + spacing
       return {
-        path: line.path, role: line.role, material,
+        path: line.path, role: line.role, ...(line.colour ? { colour: line.colour } : {}), material,
         angleDeg: normalise(rect.angleDeg + phi),
         pivot: boxCentre(part.outline, rect.angleDeg),
         x: W / 2 - offset * s,
@@ -284,7 +292,7 @@ function diagonalPlates(
       // Fits only by its exact outline: alone, at the angle that leaves the most room.
       const { line, part } = group[0]
       const fit = checkFit(part, options.printer)
-      plates.push([{ path: line.path, role: line.role, material, angleDeg: fit.angleDeg, pivot: boxCentre(part.outline, fit.angleDeg), x: W / 2, y: D / 2 }])
+      plates.push([{ path: line.path, role: line.role, ...(line.colour ? { colour: line.colour } : {}), material, angleDeg: fit.angleDeg, pivot: boxCentre(part.outline, fit.angleDeg), x: W / 2, y: D / 2 }])
       continue
     }
     for (let i = 0; i < sorted.length;) {

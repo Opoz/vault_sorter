@@ -14,9 +14,10 @@ import { filamentEstimate } from '../engine/filament'
 import type { PrinterBed } from '../engine/fit'
 import type { Tower, Unit } from '../engine/model'
 import { partsForTower } from '../engine/parts'
+import { withPaint } from '../engine/paintLines'
 import { packPlates } from '../engine/plates'
 import { realCatalog } from '../engine/testing'
-import { writeBambuProject } from './bambu3mf'
+import { primeTowerSpot, writeBambuProject } from './bambu3mf'
 import { readStl } from './stl'
 
 const VAULT = process.env.VAULT_DIR ?? join(__dirname, '../../261021_VAULT_USSA_S/261021_VAULT_USSA_S')
@@ -79,6 +80,51 @@ describe.skipIf(!enabled)('a Bambu project sliced by Bambu Studio', () => {
         expect(grams, `plate ${i + 1}`).toBeGreaterThan(estimate * 0.85)
         expect(grams, `plate ${i + 1}`).toBeLessThan(estimate * 1.6)
       }
+    }, 1_200_000)
+  }
+})
+
+// Painted parts (issue #7) add filament slots past the template's four; Bambu Studio must take the grown settings
+// on one-nozzle and two-nozzle printers alike. Painted plates print in one colour each, unless colours may mix,
+// which is sliced on the H2D, the one printer where mixed plates slice without the wipe tower meeting parts.
+describe.skipIf(!enabled)('a Bambu project with painted parts, sliced by Bambu Studio', () => {
+  const runs: [string, boolean][] = [['h2s', false], ['h2d', false], ['x1-carbon', false], ['a2l', false], ['h2d', true]]
+  for (const [id, mixing] of runs) {
+    it(`slices a tower with two painted colours for the ${id}${mixing ? ', colours mixing' : ''}`, async () => {
+      const printer = printersJson.printers.find((p) => p.id === id)! as unknown as PrinterBed
+      const settings = JSON.parse(readFileSync(join(__dirname, `../data/bambu/${id}.json`), 'utf8'))
+      const colours = { body: '#D3D5D2', accent: '#8A8F93', secondary: '#2F3236' }
+      const all = partsForTower(tower, { catalog: realCatalog, printer })
+      const facade = all.find((l) => /Facade/.test(l.path))!
+      const key = all.find((l) => /Key/.test(l.path))!
+      const lines = withPaint(all, new Map([[facade.path, [{ colour: '#C0392B', count: 1 }]], [key.path, [{ colour: '#2E86DE', count: key.qty }]]]), colours)
+      const excluded = [...(printer.excluded ?? []), ...(mixing ? [primeTowerSpot(settings).zone] : [])]
+      const plates = packPlates(lines, { catalog: realCatalog, printer: { ...printer, excluded }, allowColourMixing: mixing })
+
+      const dir = mkdtempSync(join(tmpdir(), 'vault-slice-'))
+      const projectPath = join(dir, 'painted.3mf')
+      const chunks: Uint8Array[] = []
+      await writeBambuProject(
+        {
+          plates, printer, settings, colours,
+          meshFor: async (path) => {
+            const b = readFileSync(join(VAULT, path))
+            return readStl(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer)
+          },
+        },
+        async (c) => { chunks.push(c) },
+      )
+      writeFileSync(projectPath, Buffer.concat(chunks))
+      if (process.env.KEEP_SLICE) console.log('PROJECT', id, projectPath, 'plates', plates.length)
+      try {
+        execFileSync(BAMBU, ['--slice', '0', '--outputdir', dir, projectPath], { timeout: 900_000, stdio: 'ignore' })
+      } catch { /* the result file says what happened */ }
+      const result = JSON.parse(readFileSync(join(dir, 'result.json'), 'utf8'))
+
+      expect(result.error_string).toBe('Success.')
+      expect(result.sliced_plates).toHaveLength(plates.length)
+      const used = new Set(result.sliced_plates.flatMap((p: { filaments: { id: number }[] }) => p.filaments.map((f) => f.id)))
+      expect([...used].some((f) => Number(f) >= 4), `filaments used: ${[...used]}`).toBe(true)
     }, 1_200_000)
   }
 })

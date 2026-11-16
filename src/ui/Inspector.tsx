@@ -16,7 +16,7 @@ import { printerLabel } from './data'
 import { ColorPicker } from './ColorPicker'
 import { rememberColour } from './colour'
 import { ExportPanel } from './ExportPanel'
-import { paintedCounts } from './paintTargets'
+import type { PaintedCounts } from '../engine/paintLines'
 import { describe } from './text'
 import type { Editor } from './useEditor'
 
@@ -24,6 +24,8 @@ export interface TowerInfo {
   depth?: Depth
   choice?: DepthChoice
   parts?: PartLine[]
+  /** Copies painted each colour, by part file (issue #7). */
+  painted?: PaintedCounts
   hardware?: HardwareLine[]
   grams?: FilamentEstimate
   dimensions?: TowerDimensions
@@ -295,7 +297,7 @@ function TowerPanel({ editor, tower, info, picked }: {
           onStep={(path, delta) => editor.apply(changePrinted(editor.layout, tower.id, { [path]: delta }))}
           onReprint={info.depth ? setReprint : undefined}
           marked={picked}
-          painted={info.depth && tower.paint ? paintedCounts(tower, info.depth, editor.printer, editor.layout.splitParts) : undefined}
+          painted={info.painted}
         />
       )}
       {info.hardware && info.hardware.length > 0 && <HardwareSummary lines={info.hardware} />}
@@ -303,7 +305,7 @@ function TowerPanel({ editor, tower, info, picked }: {
         const built = toEngineTower(tower, info.depth)
         return built ? (
           <ExportPanel
-            editor={editor} tower={built} towerId={tower.id} towerName={`Tower ${index + 1}`}
+            editor={editor} tower={built} towerId={tower.id} towerName={`Tower ${index + 1}`} painted={info.painted}
             reprint={reprint && info.parts.some((l) => l.path === reprint) ? reprint : undefined}
             onReprintDone={() => setReprint(undefined)}
           />
@@ -508,6 +510,11 @@ function FilamentSummary({ grams, colours }: { grams: FilamentEstimate; colours:
             <span className={`swatch swatch-${role}`} aria-hidden="true" />{ROLE_NAME[role]} {formatGrams(grams[role])}
           </span>
         ))}
+        {Object.entries(grams.painted ?? {}).map(([colour, g]) => (
+          <span key={colour} className="gram-role">
+            <span className="swatch" style={{ background: colour }} aria-hidden="true" />{colour} {formatGrams(g)}
+          </span>
+        ))}
       </p>
       <p className="muted small">Parts only, at Bambu Studio's default settings. Supports and colour-change purge aren't included.</p>
     </div>
@@ -559,6 +566,7 @@ function LayoutTotals({ info, layout }: { info: Map<string, TowerInfo>; layout: 
     body: g.body + (t.grams?.body ?? 0), accent: g.accent + (t.grams?.accent ?? 0),
     secondary: g.secondary + (t.grams?.secondary ?? 0), total: g.total + (t.grams?.total ?? 0),
   }), { body: 0, accent: 0, secondary: 0, total: 0 })
+  const paintedGrams = towers.reduce((n, t) => n + Object.values(t.grams?.painted ?? {}).reduce((a, b) => a + b, 0), 0)
   const hardware = new Map<string, number>()
   for (const t of towers) for (const h of t.hardware ?? []) hardware.set(h.item, (hardware.get(h.item) ?? 0) + h.qty)
   return (
@@ -566,7 +574,7 @@ function LayoutTotals({ info, layout }: { info: Map<string, TowerInfo>; layout: 
       <h3>Whole layout</h3>
       <p className="size-line">{parts} parts, about {formatGrams(grams.total)}</p>
       {printed > 0 && <p className="small">{printed} of {parts} printed</p>}
-      <p className="muted small">{ROLES.map(({ role, name }) => `${name} ${formatGrams(grams[role])}`).join(', ')}. Towers still being built aren't counted.</p>
+      <p className="muted small">{[...ROLES.map(({ role, name }) => `${name} ${formatGrams(grams[role])}`), ...(paintedGrams > 0 ? [`painted parts ${formatGrams(paintedGrams)}`] : [])].join(', ')}. Towers still being built aren't counted.</p>
       {hardware.size > 0 && (
         <details className="parts">
           <summary>Hardware for every tower</summary>

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createCatalog, type PartMeasure } from '../engine/catalog'
 import type { PartLine } from '../engine/parts'
 import { packPlates } from '../engine/plates'
-import { writeBambuProject } from './bambu3mf'
+import { growFilaments, writeBambuProject } from './bambu3mf'
 import type { Mesh } from './stl'
 
 // Box-shaped stand-in parts, so every position can be checked exactly.
@@ -44,8 +44,8 @@ const lines: PartLine[] = [
   { path: 'A/Tyre (TPU).stl', qty: 2, role: 'body', source: 't', flags: [] },
 ]
 
-async function exportProject() {
-  const plates = packPlates(lines, { catalog, printer: H2S, allowColourMixing: false })
+async function exportProject(parts: PartLine[] = lines, allowColourMixing = false) {
+  const plates = packPlates(parts, { catalog, printer: H2S, allowColourMixing })
   const chunks: Uint8Array[] = []
   await writeBambuProject(
     { plates, printer: H2S, settings, colours: { body: '#D3D5D2', accent: '#8A8F93', secondary: '#2F3236' }, meshFor: async (path) => box(path) },
@@ -154,5 +154,74 @@ describe('writeBambuProject', () => {
         expect(y).toBeLessThanOrEqual(oy + H2S.bed.depth + 0.01)
       }
     }
+  })
+})
+
+describe('writeBambuProject with painted parts', () => {
+  const painted: PartLine[] = [
+    ...lines.filter((l) => !/Facade|Box/.test(l.path)),
+    { path: 'A/Facade.stl', qty: 1, role: 'body', source: 't', flags: [] },
+    { path: 'A/Facade.stl', qty: 1, role: 'body', source: 't', flags: [], colour: '#C0392B' },
+    { path: 'A/Box.stl', qty: 2, role: 'body', source: 't', flags: [], colour: '#2E86DE' },
+  ]
+  const objectsOf = (config: string) => [...config.matchAll(/<object id="(\d+)">([\s\S]*?)<\/object>/g)].map((m) => ({
+    name: m[2].match(/key="name" value="([^"]*)"/)![1],
+    slot: m[2].match(/key="extruder" value="(\d+)"/)![1],
+  }))
+
+  it('gives each painted colour a filament slot after the TPU one, and names its plates by colour', async () => {
+    const { text } = await exportProject(painted)
+    const s = JSON.parse(text('Metadata/project_settings.config'))
+    expect(s.filament_colour).toEqual(['#D3D5D2', '#2F3236', '#8A8F93', '#1A1A1A', '#C0392B', '#2E86DE'])
+    const objects = objectsOf(text('Metadata/model_settings.config'))
+    expect(objects.filter((o) => o.name === 'Box.stl').map((o) => o.slot)).toEqual(['6', '6'])
+    expect(objects.filter((o) => o.name === 'Facade.stl').map((o) => o.slot).sort()).toEqual(['1', '5'])
+    expect(text('Metadata/model_settings.config')).toMatch(/plater_name" value="Plate \d+ - #C0392B"/)
+  })
+})
+
+describe('growFilaments', () => {
+  // Shaped like the captured H2S template: 4 filaments (3 PLA, TPU), 3 nozzle variants each.
+  const template = {
+    filament_colour: ['#1', '#2', '#3', '#4'],
+    filament_type: ['PLA', 'PLA', 'PLA', 'TPU'],
+    filament_settings_id: ['PLA@H2S', 'PLA@H2S', 'PLA@H2S', 'TPU@H2S'],
+    nozzle_temperature: ['220', '220', '220', '230', '230', '230', '220', '220', '220', '240', '240', '240'],
+    filament_self_index: ['1', '1', '1', '2', '2', '2', '3', '3', '3', '4', '4', '4'],
+    flush_volumes_matrix: ['0', '280', '280', '270', '280', '0', '280', '270', '280', '280', '0', '270', '120', '120', '120', '0'],
+    flush_volumes_vector: ['140', '140', '140', '140', '140', '140', '140', '140'],
+    printable_area: ['0x0', '340x0', '340x320', '0x320'],
+    machine_max_speed_x: ['500', '200', '500', '200'],
+    wipe_tower_x: ['15', '15'],
+  }
+
+  it('adds filaments copied from the ones they stand in for', () => {
+    const s = growFilaments(template, [0, 3]) as Record<string, string[]>
+    expect(s.filament_type).toEqual(['PLA', 'PLA', 'PLA', 'TPU', 'PLA', 'TPU'])
+    expect(s.filament_settings_id.slice(4)).toEqual(['PLA@H2S', 'TPU@H2S'])
+    expect(s.filament_self_index).toEqual([...template.filament_self_index, '5', '5', '5', '6', '6', '6'])
+    expect(s.nozzle_temperature.slice(12)).toEqual(['220', '220', '220', '240', '240', '240'])
+  })
+
+  it('grows the flush matrix with the rows and columns of the filaments copied', () => {
+    const m = (growFilaments(template, [0]) as Record<string, string[]>).flush_volumes_matrix
+    expect(m).toHaveLength(25)
+    const at = (r: number, c: number) => m[r * 5 + c]
+    expect([at(4, 0), at(4, 1), at(4, 3), at(4, 4)]).toEqual(['280', '280', '270', '0'])
+    expect([at(1, 4), at(3, 4)]).toEqual(['280', '120'])
+    expect(at(1, 2)).toBe('280')
+  })
+
+  it('grows the flush matrix for each nozzle on printers with two', () => {
+    const two = { ...template, flush_volumes_matrix: [...template.flush_volumes_matrix, ...template.flush_volumes_matrix] }
+    expect((growFilaments(two, [0]) as Record<string, string[]>).flush_volumes_matrix).toHaveLength(50)
+  })
+
+  it('leaves printer settings that only happen to have four values alone', () => {
+    const s = growFilaments(template, [0, 0]) as Record<string, string[]>
+    expect(s.printable_area).toEqual(template.printable_area)
+    expect(s.machine_max_speed_x).toEqual(template.machine_max_speed_x)
+    expect(s.flush_volumes_vector).toEqual(template.flush_volumes_vector)
+    expect(s.wipe_tower_x).toEqual(template.wipe_tower_x)
   })
 })

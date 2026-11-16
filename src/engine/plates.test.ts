@@ -313,3 +313,24 @@ function segmentDistance([px, py]: Point, [ax, ay]: Point, [bx, by]: Point): num
   const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy || 1)))
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 }
+
+describe('packPlates with painted parts', () => {
+  const lines = partsForTower(mTower, { catalog: realCatalog, printer: H2S })
+  const facade = lines.find((l) => /Facade/.test(l.path))!
+
+  it('prints painted parts on plates of their own colour unless colours may mix', () => {
+    const painted = [...lines.filter((l) => l !== facade), { ...facade, colour: '#C0392B' }]
+    const plates = packPlates(painted, { catalog: realCatalog, printer: H2S, allowColourMixing: false })
+    const red = plates.filter((p) => p.colour === '#C0392B')
+    expect(red.length).toBeGreaterThan(0)
+    for (const p of red) for (const it of p.items) expect(it.path).toBe(facade.path)
+    for (const p of plates.filter((x) => x.colour !== '#C0392B')) expect(p.items.some((it) => it.colour)).toBe(false)
+    expect(red.flatMap((p) => p.items).every((it) => it.colour === '#C0392B')).toBe(true)
+  })
+
+  it('keeps the colour on each part when colours mix', () => {
+    const painted = [...lines.filter((l) => l !== facade), { ...facade, colour: '#C0392B' }]
+    const plates = packPlates(painted, { catalog: realCatalog, printer: H2S, allowColourMixing: true })
+    expect(plates.flatMap((p) => p.items).filter((it) => it.colour === '#C0392B')).toHaveLength(facade.qty)
+  })
+})

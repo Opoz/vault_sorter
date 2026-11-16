@@ -7,6 +7,8 @@ import { createPortal } from 'react-dom'
 import { depthOptions } from './engine/depth'
 import { towerDimensions } from './engine/dimensions'
 import { filamentEstimate } from './engine/filament'
+import { withPaint } from './engine/paintLines'
+import { paintedCounts } from './ui/paintTargets'
 import { hardwareForTower } from './engine/hardware'
 import { partsForTower, UnavailableError } from './engine/parts'
 import {
@@ -119,8 +121,8 @@ export default function App() {
 
   // Keyed on what the towers' info reads, not the whole layout, so renaming the layout doesn't recompute it (each
   // tower's depth options, parts and plates) on every keystroke.
-  const { towers, splitParts } = layout
-  const info = useMemo(() => towerInfo(towers, splitParts, printer), [towers, splitParts, printer])
+  const { towers, splitParts, colours } = layout
+  const info = useMemo(() => towerInfo(towers, splitParts, printer, colours), [towers, splitParts, printer, colours])
   // Incomplete towers: whether the units placed so far fit, so a misfit shows before the last gap is filled.
   const partial = useMemo(() => new Map(towers.filter((t) => !info.get(t.id)?.choice)
     .flatMap((t) => { const why = partialFit(t, printer, splitParts); return why ? [[t.id, why] as const] : [] })), [towers, splitParts, printer, info])
@@ -461,7 +463,7 @@ function Trash({ canvas }: { canvas: HTMLElement | null }) {
 }
 const TRASH_SIZE_PX = 128
 
-function towerInfo(towers: EditorLayout['towers'], splitParts: EditorLayout['splitParts'], printer: Editor['printer']): Map<string, TowerInfo> {
+function towerInfo(towers: EditorLayout['towers'], splitParts: EditorLayout['splitParts'], printer: Editor['printer'], colours: EditorLayout['colours']): Map<string, TowerInfo> {
   const map = new Map<string, TowerInfo>()
   const options = { catalog, printer, splitParts }
   for (const tower of towers) {
@@ -476,10 +478,12 @@ function towerInfo(towers: EditorLayout['towers'], splitParts: EditorLayout['spl
       const depth = tower.depth ?? choice.suggested
       const built = depth ? { ...probe, depth } : undefined
       const parts = built ? partsForTower(built, options) : undefined
+      // Painted copies (issue #7), counted from the 3D layout, which names every copy.
+      const painted = parts && depth && tower.paint ? paintedCounts(tower, depth, printer, splitParts) : undefined
       map.set(tower.id, {
-        choice, depth, parts,
+        choice, depth, parts, painted,
         hardware: hardwareForTower(probe),
-        grams: parts ? filamentEstimate(parts, catalog) : undefined,
+        grams: parts ? filamentEstimate(painted ? withPaint(parts, painted, colours) : parts, catalog) : undefined,
         dimensions: built ? towerDimensions(built, options) : undefined,
       })
     } catch (e) {

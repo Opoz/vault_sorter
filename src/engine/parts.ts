@@ -23,6 +23,8 @@ export interface PartLine {
   readonly path: string
   readonly qty: number
   readonly role: ColourRole
+  /** The colour these copies are painted (upper-case hex), when not their Colour role's (issue #7). */
+  readonly colour?: string
   /** Where the part and its count come from, e.g. "Drawer Assembly pp1–8". */
   readonly source: string
   readonly flags: readonly Flag[]

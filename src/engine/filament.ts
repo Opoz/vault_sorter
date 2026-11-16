@@ -14,7 +14,10 @@ export const PLA_DENSITY_G_PER_MM3 = 1.26 / 1000 // Bambu PLA Basic, 1.26 g/cm³
 export const SHELL_MM = 0.8
 export const INFILL = 0.15 // Bambu Studio default sparse infill
 
-export type FilamentEstimate = Record<ColourRole | 'total', number>
+export type FilamentEstimate = Record<ColourRole | 'total', number> & {
+  /** Grams for painted parts, by colour (issue #7); left out when nothing is painted. */
+  readonly painted?: Readonly<Record<string, number>>
+}
 
 export function gramsForPart(volume: number, area: number): number {
   const walls = Math.min(volume, area * SHELL_MM)
@@ -22,12 +25,14 @@ export function gramsForPart(volume: number, area: number): number {
 }
 
 export function filamentEstimate(lines: readonly PartLine[], catalog: Catalog): FilamentEstimate {
-  const grams: FilamentEstimate = { body: 0, accent: 0, secondary: 0, total: 0 }
+  const grams = { body: 0, accent: 0, secondary: 0, total: 0 }
+  const painted: Record<string, number> = {}
   for (const line of lines) {
     const part = catalog.get(line.path)
     const g = gramsForPart(part.volume, part.area) * line.qty
-    grams[line.role] += g
+    if (line.colour) painted[line.colour] = (painted[line.colour] ?? 0) + g
+    else grams[line.role] += g
     grams.total += g
   }
-  return grams
+  return Object.keys(painted).length ? { ...grams, painted } : grams
 }

@@ -102,8 +102,9 @@ ${objects.map((o) => `  <object id="${o.id}" type="model">
 ${objects.map((o) => `  <item objectid="${o.id}" transform="1 0 0 0 1 0 0 0 1 ${num(o.tx)} ${num(o.ty)} 0" printable="1"/>`).join('\n')}
  </build>
 </model>`)
-  file('Metadata/model_settings.config', modelSettings(input.plates, objects))
-  file('Metadata/project_settings.config', JSON.stringify(projectSettings(input), null, 4))
+  const slots = filamentSlots(input)
+  file('Metadata/model_settings.config', modelSettings(input.plates, objects, slots.slotOf))
+  file('Metadata/project_settings.config', JSON.stringify(projectSettings(input, slots), null, 4))
   zip.end()
   await pending
   if (failure) throw failure
@@ -126,13 +127,88 @@ function plateSize(settings: Record<string, unknown>): { width: number; depth: n
   return { width: Math.max(...xs) - Math.min(...xs), depth: Math.max(...ys) - Math.min(...ys) }
 }
 
-/** Filament slots: 1 Primary (body), 2 Secondary, 3 Accent (all PLA), 4 TPU. */
+/**
+ * Filament slots: 1 Primary (body), 2 Secondary, 3 Accent (all PLA), 4 TPU, then one per painted colour (issue #7),
+ * in the order the plates first use them. Each added slot copies the template's PLA or TPU filament.
+ */
 const SLOT = { body: 1, secondary: 2, accent: 3 } as const
-const slotOf = (item: PlacedItem) => (item.material === 'TPU' ? 4 : SLOT[item.role])
+const TPU_SLOT = 4
+
+interface Slots {
+  readonly slotOf: (item: PlacedItem) => number
+  /** Each slot's colour, slot 1 first. */
+  readonly colours: readonly string[]
+  /** For each slot after the template's four, which template filament (0-based) it copies. */
+  readonly added: readonly number[]
+}
+
+function filamentSlots(input: BambuProjectInput): Slots {
+  const colours = [input.colours.body, input.colours.secondary, input.colours.accent, input.tpuColour ?? '#1A1A1A']
+  const added: number[] = []
+  const painted = new Map<string, number>()
+  const key = (item: PlacedItem) => `${item.material}|${item.colour!.toUpperCase()}`
+  for (const plate of input.plates) {
+    for (const item of plate.items) {
+      if (!item.colour || painted.has(key(item))) continue
+      colours.push(item.colour.toUpperCase())
+      added.push(item.material === 'TPU' ? TPU_SLOT - 1 : SLOT.body - 1)
+      painted.set(key(item), colours.length)
+    }
+  }
+  const slotOf = (item: PlacedItem) => (item.colour ? painted.get(key(item))! : item.material === 'TPU' ? TPU_SLOT : SLOT[item.role])
+  return { slotOf, colours, added }
+}
+
+/** Printer settings that can happen to have one value per filament but aren't per filament. */
+const NOT_PER_FILAMENT = /^(machine_|bed_|wrapping_|print_compatible|printable_|head_wrap|upward_compatible|extruder_|start_end_points|wipe_tower_|flush_|filament_dev_ams_|filament_self_index$|nozzle_flush|nozzle_volume|nozzle_diameter)/
+
+/**
+ * The template's settings with more filaments, each a copy of the template filament named in `copies` (0-based).
+ * Per-filament settings come in one value per filament, or one per filament and nozzle variant (grouped by
+ * `filament_self_index`); flush volumes are a filament × filament matrix per nozzle.
+ */
+export function growFilaments(settings: Record<string, unknown>, copies: readonly number[]): Record<string, unknown> {
+  const ids = settings.filament_settings_id ?? settings.filament_type
+  if (!copies.length || !Array.isArray(ids)) return settings
+  const n = ids.length
+  const out: Record<string, unknown> = { ...settings }
+  const self = Array.isArray(settings.filament_self_index) ? (settings.filament_self_index as string[]) : undefined
+  const blocks = self && copies.map((c) => self.flatMap((v, i) => (v === String(c + 1) ? [i] : [])))
+  for (const [key, value] of Object.entries(settings)) {
+    if (!Array.isArray(value) || NOT_PER_FILAMENT.test(key)) continue
+    if (value.length === n) out[key] = [...value, ...copies.map((c) => value[c])]
+    else if (self && blocks && value.length === self.length) out[key] = [...value, ...blocks.flatMap((b) => b.map((i) => value[i]))]
+  }
+  if (self && blocks) out.filament_self_index = [...self, ...blocks.flatMap((b, k) => b.map(() => String(n + k + 1)))]
+  const matrix = settings.flush_volumes_matrix
+  if (Array.isArray(matrix) && matrix.length % (n * n) === 0) {
+    const types = Array.isArray(settings.filament_type) ? (settings.filament_type as string[]) : ids.map(() => '')
+    const N = n + copies.length
+    const source = (i: number) => (i < n ? i : copies[i - n])
+    const grown: unknown[] = []
+    for (let e = 0; e < matrix.length / (n * n); e++) {
+      const old = (r: number, c: number) => matrix[e * n * n + r * n + c]
+      for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+          const [sr, sc] = [source(r), source(c)]
+          if (r === c) grown.push(old(sr, sr))
+          else if (sr !== sc) grown.push(old(sr, sc))
+          else {
+            // Two filaments copied from one: a colour change all the same, flushed like one between two of that type.
+            const twin = types.findIndex((t, i) => i !== sr && t === types[sr])
+            grown.push(twin >= 0 ? old(sr, twin) : old(sr, (sr + 1) % n))
+          }
+        }
+      }
+    }
+    out.flush_volumes_matrix = grown
+  }
+  return out
+}
 const needsSupport = (path: string) => /\(turn on supports\)/i.test(path)
 const fileName = (path: string) => path.split('/').pop()!
 
-function modelSettings(plates: readonly PackedPlate[], objects: { id: number; meshId: number; item: PlacedItem; plate: number }[]): string {
+function modelSettings(plates: readonly PackedPlate[], objects: { id: number; meshId: number; item: PlacedItem; plate: number }[], slotOf: Slots['slotOf']): string {
   const objectXml = objects.map((o) => {
     const name = xml(safeName(fileName(o.item.path)))
     return `  <object id="${o.id}">
@@ -158,15 +234,15 @@ ${objects.filter((o) => o.plate === p).map((o) => `    <model_instance>
 
 function plateName(plate: PackedPlate): string {
   if (plate.material === 'TPU') return `Plate ${plate.index} - TPU`
+  if (plate.colour) return `Plate ${plate.index} - ${plate.colour}`
   return `Plate ${plate.index} - ${plate.role === 'mixed' ? 'mixed colours' : `${plate.role === 'body' ? 'primary' : plate.role} colour`}`
 }
 
 /** Bambu Studio refuses any name containing these characters, with an error pop-up per name. */
 const safeName = (s: string) => s.replace(/[<>:/\\|?*"]+/g, '-')
 
-function projectSettings(input: BambuProjectInput): Record<string, unknown> {
-  const colours = [input.colours.body, input.colours.secondary, input.colours.accent, input.tpuColour ?? '#1A1A1A']
-  const settings: Record<string, unknown> = { ...input.settings, filament_colour: colours, filament_multi_colour: colours }
+function projectSettings(input: BambuProjectInput, { slotOf, colours, added }: Slots): Record<string, unknown> {
+  const settings: Record<string, unknown> = { ...growFilaments(input.settings, added), filament_colour: colours, filament_multi_colour: colours }
   // A wipe tower is only built where a plate changes filament. When none does, switch it off: left on, it
   // can collide with parts. When colours mix, every plate keeps it at the spot the packer kept free for it.
   const mixes = input.plates.some((plate) => new Set(plate.items.map(slotOf)).size > 1)

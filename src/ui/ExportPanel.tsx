@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Tower } from '../engine/model'
+import type { PaintedCounts } from '../engine/paintLines'
 import type { PackedPlate } from '../engine/plates'
 import { platesDone, type Printed } from '../engine/progress'
 import { changePrinted } from '../editor/layoutOps'
@@ -17,8 +18,14 @@ const MEMORY_WARNING_BYTES = 1.5e9
 const sizeText = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`)
 const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'AbortError'
 
-export function ExportPanel({ editor, tower, towerId, towerName, reprint, onReprintDone }: {
+/** Spools one AMS holds, and the most AMS units a Bambu printer takes. */
+const AMS_SLOTS = 4
+const MAX_AMS_SLOTS = 16
+
+export function ExportPanel({ editor, tower, towerId, towerName, painted, reprint, onReprintDone }: {
   editor: Editor; tower: Tower; towerId: string; towerName: string
+  /** Copies painted another colour, by part file (issue #7). */
+  painted?: PaintedCounts
   /** A part chosen in the parts list to print on its own (its path), e.g. after one failed or broke. */
   reprint?: string
   onReprintDone: () => void
@@ -36,10 +43,13 @@ export function ExportPanel({ editor, tower, towerId, towerName, reprint, onRepr
     plateEdgeMm: editor.layout.plateEdgeMm,
     plateDensity: editor.layout.plateDensity,
     colours: editor.layout.colours,
+    painted,
   }
   const [plates, packError] = useMemo((): [PackedPlate[] | undefined, string | undefined] => {
     try { return [platesFor(req), undefined] } catch (e) { return [undefined, e instanceof Error ? e.message : String(e)] }
-  }, [tower, printer, editor.layout.splitParts, editor.layout.allowColourMixing, editor.layout.plateEdgeMm, editor.layout.plateDensity]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tower, printer, painted, editor.layout.colours, editor.layout.splitParts, editor.layout.allowColourMixing, editor.layout.plateEdgeMm, editor.layout.plateDensity]) // eslint-disable-line react-hooks/exhaustive-deps
+  // PLA colours the tower prints in: the Colour roles it uses and each painted colour.
+  const plaColours = plates ? new Set(plates.flatMap((p) => p.items.filter((i) => i.material === 'PLA').map((i) => i.colour ?? i.role))).size : 0
   const templated = hasTemplate(printer.id)
   const printed = editor.layout.towers.find((t) => t.id === towerId)?.printed ?? {}
   const estimate = plates ? estimateProjectBytes(plates, catalog) : 0
@@ -110,6 +120,15 @@ export function ExportPanel({ editor, tower, towerId, towerName, reprint, onRepr
           from the edge (you chose {editor.layout.plateEdgeMm} mm), so it prints on a plate of its own.
         </p>
       ))}
+
+      {plaColours > AMS_SLOTS && (
+        <p className="small export-warning" role="note">
+          This tower prints in {plaColours} colours of PLA. One AMS holds {AMS_SLOTS}
+          {plaColours > MAX_AMS_SLOTS
+            ? `, and even ${MAX_AMS_SLOTS / AMS_SLOTS} AMS units hold only ${MAX_AMS_SLOTS}: some colours will need swapping by hand between plates.`
+            : `: you'll need ${Math.ceil(plaColours / AMS_SLOTS)} AMS units, or to swap spools by hand between plates.`}
+        </p>
+      )}
 
       {plates && <PlateChecklist plates={plates} printed={printed} onChange={(delta) => editor.apply(changePrinted(editor.layout, towerId, delta))} />}
 
@@ -207,7 +226,7 @@ function PlateChecklist({ plates, printed, onChange }: {
           <li key={p.index}>
             <label className="check">
               <input type="checkbox" checked={done[i]} onChange={() => toggle(i)} />
-              Plate {p.index} <span className="muted">· {p.material === 'TPU' ? 'TPU' : p.role === 'body' ? 'primary' : p.role} · {p.items.length} part{p.items.length === 1 ? '' : 's'}</span>
+              Plate {p.index} <span className="muted">· {p.material === 'TPU' ? 'TPU' : p.colour ? <><span className="swatch" style={{ background: p.colour }} aria-hidden="true" />{p.colour}</> : p.role === 'body' ? 'primary' : p.role} · {p.items.length} part{p.items.length === 1 ? '' : 's'}</span>
             </label>
           </li>
         ))}

@@ -499,3 +499,4 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .swatch-painted { position: relative; }
 .swatch-count { position: absolute; right: -0.45rem; bottom: -0.35rem; min-width: 0.8rem; padding: 0 0.15rem; border-radius: 999px; background: var(--panel); box-shadow: 0 0 0 1px rgb(36 39 42 / 0.3); font-size: 0.6rem; line-height: 0.8rem; text-align: center; color: var(--ink); }
+.swatch-painted:has(.swatch-count) { margin-right: 0.9rem; }

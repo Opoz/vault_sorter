@@ -36,3 +36,14 @@ describe('filamentEstimate', () => {
     expect(both.total).toBeCloseTo(both.body + both.accent, 6)
   })
 })
+
+describe('filamentEstimate with painted parts', () => {
+  it('counts painted parts under their own colour, not their role', () => {
+    const latch = `${DRAWERS}/07. Universal/Latch.stl`
+    const one = filamentEstimate([line(latch)], realCatalog).body
+    const estimate = filamentEstimate([line(latch, 1), { ...line(latch, 2), colour: '#C0392B' }], realCatalog)
+    expect(estimate.body).toBeCloseTo(one)
+    expect(estimate.painted).toEqual({ '#C0392B': expect.closeTo(2 * one) })
+    expect(estimate.total).toBeCloseTo(3 * one)
+  })
+})
