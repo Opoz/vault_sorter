@@ -296,7 +296,8 @@ function backAttachmentParts(tower: Tower): Want[] {
       for (const unit of unitsOf(row)) {
         wants.push(...from(SOURCES.wallMount, [
           { tidyPath: `${MODS}/wall mounts/${unit.width.toLowerCase()}${unit.height.toLowerCase()} wall mount.stl`, qty: 1, role: 'body' },
-          { tidyPath: `${MODS}/wall mounts/wall mount second part.stl`, qty: 1, role: 'body', flags: [second] },
+          // L and XL plates have two cut-outs, so they hang on two (measured; the user).
+          { tidyPath: `${MODS}/wall mounts/wall mount second part.stl`, qty: unit.width === 'L' || unit.width === 'XL' ? 2 : 1, role: 'body', flags: [second] },
         ]))
       }
     }

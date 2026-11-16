@@ -544,7 +544,16 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       return [pin(pinLow[0], pinLow[1], -16), pin(pinTop[0], pinTop[1], -9), pin(pinLow[0], pinLow[1], 16), pin(pinTop[0], pinTop[1], 9, true)]
     }
   }
-  if (/wall mount second/.test(file)) return small(path, [cx, f.y0 + f.h / 2, -f.d / 2 - 30], [0, 0, -110], measure)
+  if (/wall mount second/.test(file)) {
+    // The part screwed to the wall sits at the top of the mount's cut-out, which starts 18 mm under the mount's top
+    // edge (the mount is 7.1 mm taller than its floors; measured on S, M, L and XL mounts; the user: top). L and XL
+    // plates have two cut-outs; the XL's aren't symmetric (measured centres).
+    const [, sy2, sz2] = measure(path)
+    const mountTop = f.y0 + f.h / 2 + (f.h + 7.1) / 2
+    const cutouts = unit.width === 'L' ? [-81.8, 82.7] : unit.width === 'XL' ? [-126.4, 83.1] : [0]
+    const x = cutouts[n] ?? 0
+    return { ...small(path, [cx + x, mountTop - 18 - sy2 / 2, -f.d / 2 - 17 + sz2 / 2], [0, 0, -110], measure) }
+  }
   if (/wall mount/.test(file)) {
     const size: Vec3 = ranked([sx, sy, sz])
     return { center: [cx, f.y0 + f.h / 2, -f.d / 2 - size[2] / 2], size: [size[0], size[1], size[2]], spread: [0, 0, -60], axes: rankAxes([sx, sy, sz]) }

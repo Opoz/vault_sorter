@@ -293,11 +293,12 @@ describe('partsForTower', () => {
       expect(boards({ stationaryHandle: true })).toBe(boards({}) - 1)
     })
 
-    it('adds a wall mount per unit, matching its size, each with a part for the wall', () => {
+    // An S or M plate has one cut-out for the part on the wall; an L or XL plate has two.
+    it('adds a wall mount per unit, matching its size, with a part for the wall in each cut-out', () => {
       const parts = byFile(partsForTower(tower({
         width: 'L', depth: 3, wallMount: true, rows: [{ height: '1F', units: [drawer('S'), drawer('S')] }, { height: '2F', units: [drawer('L')] }],
       }), opts))
-      expect(parts).toMatchObject({ 'S1F Wall Mount.stl': 2, 'L2F Wall Mount.stl': 1, 'Wall Mount Second Part.stl': 3 })
+      expect(parts).toMatchObject({ 'S1F Wall Mount.stl': 2, 'L2F Wall Mount.stl': 1, 'Wall Mount Second Part.stl': 4 })
     })
 
     it('refuses handles or a pegboard without a backbone to fix them to', () => {
