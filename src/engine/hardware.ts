@@ -3,7 +3,7 @@
  * hardware list (p3) and illustrations (pp17–19) and the Modifications manual; disagreements between
  * pages are flagged, never resolved silently.
  */
-import { FLOORS, rowFloors, unitsOf, type Tower, type Width } from './model'
+import { boxesOf, FLOORS, rowFloors, unitsOf, type Tower, type Width } from './model'
 import { backPieces, topHandleCount, type Flag } from './parts'
 
 export interface HardwareLine {
@@ -24,19 +24,22 @@ export function hardwareForTower(tower: Tower): HardwareLine[] {
   for (const row of tower.rows) {
     for (const unit of unitsOf(row)) {
       if (unit.kind === 'drawer') {
-        // p18: "x4 for 1F, x6 for 2F/4F"; p3: "x4 per floor".
-        const perPage18 = unit.height === '1F' ? 4 : 6
-        const perPage3 = 4 * FLOORS[unit.height]
-        wants.push({
-          item: 'M4 × 14 mm bolt',
-          qty: perPage18,
-          source: 'Instructions Manual p3 and p18',
-          flags: perPage3 === perPage18 ? [] : [{
-            kind: 'conflict',
-            note: `${unit.height} drawer: ${perPage18} bolts per p18 ("x6 for 2F/4F"), but ${perPage3} per p3 ("x4 per floor").`,
+        // Each Box's Facade is bolted on, so the bolts are counted per Box (issue #16).
+        for (const box of boxesOf(unit, unit.height)) {
+          // p18: "x4 for 1F, x6 for 2F/4F"; p3: "x4 per floor".
+          const perPage18 = box === '1F' ? 4 : 6
+          const perPage3 = 4 * FLOORS[box]
+          wants.push({
+            item: 'M4 × 14 mm bolt',
+            qty: perPage18,
             source: 'Instructions Manual p3 and p18',
-          }],
-        })
+            flags: perPage3 === perPage18 ? [] : [{
+              kind: 'conflict',
+              note: `${box} drawer: ${perPage18} bolts per p18 ("x6 for 2F/4F"), but ${perPage3} per p3 ("x4 per floor").`,
+              source: 'Instructions Manual p3 and p18',
+            }],
+          })
+        }
       } else {
         // p17: "x16 M4 14mm bolts, x8 M4 10mm bolts, x7 M4 20mm bolts - per module".
         wants.push(

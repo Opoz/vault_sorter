@@ -1,6 +1,6 @@
 import { cloneElement, useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import type { DepthChoice } from '../engine/depth'
-import type { Baseplate, Depth, RoofType, Width } from '../engine/model'
+import { boxArrangements, type Baseplate, type Depth, type Height, type RoofType, type Width } from '../engine/model'
 import type { TowerDimensions } from '../engine/dimensions'
 import type { FilamentEstimate } from '../engine/filament'
 import type { HardwareLine } from '../engine/hardware'
@@ -62,6 +62,24 @@ function UnitPanel({ editor, tower, unit, height }: { editor: Editor; tower: Edi
       <h2>{unit.kind === 'drawer' ? 'Drawer' : 'Sustainer'} {sizeCode}</h2>
       {unit.kind === 'drawer' ? (
         <>
+          {height !== '1F' && (
+            <Field label="Boxes in this module">
+              <select
+                value={(unit.boxes ?? [height]).join('+')}
+                onChange={(e) => {
+                  const boxes = e.target.value.split('+') as Height[]
+                  // One full-height Box is the default, so it isn't stored.
+                  set({ boxes: boxes.length === 1 ? undefined : boxes })
+                }}
+              >
+                {boxArrangements(height as Height).map((a) => (
+                  <option key={a.join('+')} value={a.join('+')}>
+                    {a.length === 1 ? `One ${a[0]} box` : `${a.join(' + ')}, bottom first`}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Gridfinity baseplate">
             <select value={unit.baseplate} onChange={(e) => set({ baseplate: e.target.value as Baseplate })}>
               <option value="none">None</option>

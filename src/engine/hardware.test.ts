@@ -103,4 +103,10 @@ describe('hardwareForTower', () => {
     // p18: x6 for a 2F drawer, x4 for each 1F drawer.
     expect(qty(hardwareForTower(split), 'M4 × 14 mm bolt')).toBe(6 + 4 + 4)
   })
+
+  // Issue #16: each Box's Facade is bolted on, so the bolts are counted per Box (p18: 4 for a 1F Facade, 6 for 2F).
+  it('counts the facade bolts per Box in a Module holding several', () => {
+    const t = tower({ width: 'L', rows: [{ height: '4F', units: [{ ...(drawer('L') as Extract<Unit, { kind: 'drawer' }>), boxes: ['2F', '1F', '1F'] }] }] })
+    expect(qty(hardwareForTower(t), 'M4 × 14 mm bolt')).toBe(6 + 4 + 4)
+  })
 })

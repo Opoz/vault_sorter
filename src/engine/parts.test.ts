@@ -39,6 +39,47 @@ describe('partsForTower', () => {
     })
   })
 
+  // Issue #16: a drawer Module can hold several Boxes, bottom first, each with its own Facade, key, springs, label,
+  // caps and runners; the Module and its latches stay one per drawer.
+  describe('a drawer Module holding several Boxes', () => {
+    const tall = (boxes: Height[], extra: Partial<Extract<Unit, { kind: 'drawer' }>> = {}) =>
+      byFile(partsForTower(tower({ width: 'L', depth: 4, rows: [{ height: '4F', units: [drawer('L', { boxes, ...extra })] }] }), opts))
+
+    it('lists a full set of Box parts for each Box, and one Module and its latches', () => {
+      expect(tall(['2F', '1F', '1F'])).toEqual({
+        'L4 Module 4F.stl': 1,
+        'L4 Box 2F.stl': 1,
+        'L4 Box 1F.stl': 2,
+        'L2F (Turn On Supports).stl': 1,
+        'L1F (Turn On Supports).stl': 2,
+        'Key (Turn On Supports).stl': 3,
+        'Key Cap.stl': 3,
+        'Springs.stl': 3,
+        // Three caps on each 1F Facade, five on the 2F one (two more for its top floor).
+        'Facade Cap.stl': 11,
+        'Label.stl': 3,
+        'x4 Runner Slide.stl': 6,
+        'x4 Runner Guide.stl': 6,
+        'Runner Stopper.stl': 6,
+        'Latch.stl': 2,
+      })
+    })
+
+    it('adds geared rails and a baseplate per Box', () => {
+      const parts = tall(['1F', '1F', '1F', '1F'], { gearedRails: true, baseplate: 'plain' })
+      expect([parts['L Rails.stl'], parts['L4 Baseplate.stl']]).toEqual([4, 4])
+    })
+
+    it('is a single Box of the Module\'s height when no Boxes are given', () => {
+      expect(tall(['4F'])).toEqual(byFile(partsForTower(tower({ width: 'L', depth: 4, rows: [{ height: '4F', units: [drawer('L')] }] }), opts)))
+    })
+
+    it('refuses Boxes that don\'t fill the Module', () => {
+      expect(() => tall(['2F', '1F'])).toThrow(/fill/)
+      expect(() => tall(['4F', '1F'])).toThrow(/fill/)
+    })
+  })
+
   describe('drawer options', () => {
     const one = (unit: Unit, width: Unit['width'] = unit.width, depth: Tower['depth'] = 3) =>
       byFile(partsForTower(tower({ width, depth, rows: [{ height: '1F', units: [unit] }] }), opts))

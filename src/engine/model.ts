@@ -17,6 +17,11 @@ export interface DrawerUnit {
   readonly baseplate: Baseplate
   readonly gearedRails: boolean
   readonly key: 'normal' | 'hidden'
+  /**
+   * The Boxes in the Module, bottom first, filling its Height (issue #16): a 4F Module can hold 2F + 1F + 1F, say,
+   * in any order. Absent means one Box of the Module's own Height.
+   */
+  readonly boxes?: readonly Height[]
 }
 
 export interface SustainerUnit {
@@ -30,6 +35,24 @@ export type Unit = DrawerUnit | SustainerUnit
 
 /** Floors in each Height. */
 export const FLOORS: Record<Height, number> = { '1F': 1, '2F': 2, '4F': 4 }
+
+/** The Boxes in a drawer's Module, bottom first: the chosen ones, or one of the Module's own Height. */
+export const boxesOf = (unit: Pick<DrawerUnit, 'boxes'>, height: Height): readonly Height[] => unit.boxes ?? [height]
+
+/**
+ * Every way to fill a drawer Module of this Height with Boxes, bottom first: one Box of the full Height first, then
+ * the splits into 2F and 1F Boxes in any order (issue #16).
+ */
+export function boxArrangements(height: Height): Height[][] {
+  const fill = (floors: number): Height[][] =>
+    floors === 0 ? [[]] : (['2F', '1F'] as const).filter((b) => FLOORS[b] <= floors).flatMap((b) => fill(floors - FLOORS[b]).map((rest) => [b, ...rest]))
+  const splits = fill(FLOORS[height]).filter((a) => !(a.length === 1 && a[0] === height))
+  return [[height], ...splits]
+}
+
+/** Whether these Boxes exactly fill a Module of this Height. */
+export const boxesFill = (boxes: readonly Height[], height: Height) =>
+  boxes.length > 0 && boxes.reduce((n, b) => n + FLOORS[b], 0) === FLOORS[height]
 
 /** A Unit with its own Height, as stacked in a Column. */
 export type StackedUnit = Unit & { readonly height: Height }

@@ -79,7 +79,7 @@ _Avoid_: Theme, palette, filament (a filament is the material loaded for a Colou
 ## Drawer parts
 
 **Box**:
-The tray that pulls out of a Drawer.
+The tray that pulls out of a Drawer. A drawer Module holds one or more Boxes stacked inside it, bottom first, adding up to its Height in any order (a 4F Module can hold 2F + 1F + 1F); each Box has its own Facade, key and runners, while the Module keeps one set of latches. One Box of the Module's own Height is the default.
 _Avoid_: Drawer (for the tray itself), tray, bin
 
 **Facade**:

@@ -186,6 +186,21 @@ describe('runners', () => {
   })
 })
 
+describe('a drawer Module holding several Boxes', () => {
+  // Issue #16: each Box sits in its own slot, bottom first, with its key, springs and label on its bottom floor.
+  it('puts each Box and its key on its own floor, and draws every copy once', () => {
+    const unit = drawer('L', '4F', { boxes: ['2F', '1F', '1F'], gearedRails: false, baseplate: 'none' })
+    const scene = assembleTower(tower('L', [[[unit]]], { roof: 'none', bottom: 'none', backbone: 'none' }), 4, opts)
+    const module = scene.find((p) => /module/i.test(file(p)))!
+    const floorOf = (p: ScenePart) => Math.floor((p.center[1] - boxBottom(module) - 4.5) / 48)
+    const keys = scene.filter((p) => /^key \(/i.test(file(p))).map(floorOf).sort()
+    expect(keys).toEqual([0, 2, 3])
+    const boxes = scene.filter((p) => /box/i.test(file(p))).map((p) => [file(p), floorOf(p)]).sort()
+    expect(boxes).toEqual([['L4 Box 1F.stl', 2], ['L4 Box 1F.stl', 3], ['L4 Box 2F.stl', 0]])
+    expect(scene.filter((p) => /latch/i.test(file(p)))).toHaveLength(2)
+  })
+})
+
 describe('roof over a sustainer', () => {
   it('sits on the lid top surface, which stands above the floor line', () => {
     const scene = assembleTower(tower('S', [[[sustainer('S', '1F')]]]), 4, opts)

@@ -417,7 +417,7 @@ export function changePrinted(layout: EditorLayout, towerId: string, delta: Read
 }
 
 export type UnitPatch =
-  | Partial<Pick<EditorDrawer, 'baseplate' | 'gearedRails' | 'key'>>
+  | Partial<Pick<EditorDrawer, 'baseplate' | 'gearedRails' | 'key' | 'boxes'>>
   | Partial<Pick<EditorSustainer, 'moduleType'>>
 
 export function updateUnit(layout: EditorLayout, towerId: string, unitId: string, patch: UnitPatch): OpResult {

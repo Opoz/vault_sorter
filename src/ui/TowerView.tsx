@@ -436,7 +436,7 @@ function PlacedUnit(props: {
       {...attributes}
       aria-pressed={selected}
     >
-      <UnitBlock kind={unit.kind} width={unit.width} height={height} colours={colours} scale={scale} selected={selected} trimPx={trimPx} />
+      <UnitBlock kind={unit.kind} width={unit.width} height={height} colours={colours} scale={scale} selected={selected} trimPx={trimPx} boxes={unit.kind === 'drawer' ? unit.boxes : undefined} />
     </button>
   )
 }

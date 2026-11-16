@@ -1,6 +1,6 @@
 import type { Catalog } from './catalog'
 import { checkFit, type PrinterBed } from './fit'
-import { columnFloors, columnsOf, rowFloors, unitsOf, type DrawerUnit, type RoofType, type SustainerUnit, type Tower, type Width } from './model'
+import { boxesFill, boxesOf, columnFloors, columnsOf, rowFloors, unitsOf, type DrawerUnit, type Height, type RoofType, type SustainerUnit, type Tower, type Width } from './model'
 import { createResolver, type Resolver } from './resolve'
 
 /**
@@ -410,15 +410,39 @@ const UNIVERSAL = `${DRAWERS}/universal`
 export class UnavailableError extends Error {}
 
 // Drawer Assembly manual pp1–8; part names from Instructions Manual p11 ("Drawers Naming").
-function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: Resolver): Want[] {
+function drawerParts(unit: DrawerUnit, depth: number, height: Height, resolver: Resolver): Want[] {
+  const w = unit.width
+  const family = `${DRAWERS}/${w} families`
+  const sizeDir = `${family}/${w}${depth}`
+  const h = height.toLowerCase()
+  const label = `${w}${depth} ${height} Drawer`
+  const boxes = boxesOf(unit, height)
+  if (!boxesFill(boxes, height)) {
+    throw new UnavailableError(`${label}: its Boxes (${boxes.join(' + ')}) don't fill the ${height} Module`)
+  }
+  // One Module and its latches per drawer; everything else comes with each Box (issue #16).
+  return [
+    { tidyPath: `${sizeDir}/modules/${w}${depth} module ${h}.stl`, qty: 1, role: 'body' },
+    {
+      // S and M Modules have one latch pocket underneath; L and XL Modules have two (measured on the module files).
+      // A Module holding several Boxes still has one set (the user).
+      tidyPath: `${UNIVERSAL}/latch.stl`, qty: w === 'L' || w === 'XL' ? 2 : 1, role: 'body',
+      ...(w === 'L' || w === 'XL' ? {
+        flags: [{ kind: 'inferred' as const, note: `${w} Modules have two latch pockets, so two latches; the manuals show only an S drawer.`, source: 'Drawer Assembly p8; the module files' }],
+      } : {}),
+    },
+    ...boxes.flatMap((box) => boxParts(unit, depth, box, label, resolver)),
+  ]
+}
+
+/** One Box of a drawer and everything that comes with it: Facade, key, springs, caps, label, runners. */
+function boxParts(unit: DrawerUnit, depth: number, height: Height, label: string, resolver: Resolver): Want[] {
   const w = unit.width
   const xl = w === 'XL'
   const family = `${DRAWERS}/${w} families`
   const sizeDir = `${family}/${w}${depth}`
   const h = height.toLowerCase()
-  const label = `${w}${depth} ${height} Drawer`
   const wants: Want[] = [
-    { tidyPath: `${sizeDir}/modules/${w}${depth} module ${h}.stl`, qty: 1, role: 'body' },
     ...drawerBox(unit, depth, h, resolver),
     {
       tidyPath: xl ? `${family}/xl facade ${h}.stl` : `${family}/facades/${w}${h}.stl`,
@@ -462,13 +486,6 @@ function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: 
       qty: 2, role: 'accent',
     },
     { tidyPath: `${UNIVERSAL}/runners/runner stopper.stl`, qty: 2, role: 'accent' },
-    {
-      // S and M Modules have one latch pocket underneath; L and XL Modules have two (measured on the module files).
-      tidyPath: `${UNIVERSAL}/latch.stl`, qty: w === 'L' || w === 'XL' ? 2 : 1, role: 'body',
-      ...(w === 'L' || w === 'XL' ? {
-        flags: [{ kind: 'inferred' as const, note: `${w} Modules have two latch pockets, so two latches; the manuals show only an S drawer.`, source: 'Drawer Assembly p8; the module files' }],
-      } : {}),
-    },
   ]
 
   if (unit.gearedRails) {

@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import type { Height, Unit, Width } from '../engine/model'
+import { FLOORS, type Height, type Unit, type Width } from '../engine/model'
 import type { Colours } from '../editor/layoutOps'
 import { rowHeightMm, WIDTH_MM } from './dims'
 
@@ -14,6 +14,8 @@ interface Props {
   label?: boolean
   /** Pixels taken off the drawn height, for the gap above it when stacked, so a stack keeps its true height. */
   trimPx?: number
+  /** A drawer's Boxes, bottom first, when its Module holds several (issue #16): each gets its own Facade. */
+  boxes?: readonly Height[]
 }
 
 /** Where a sustainer's latches sit across its width, as fractions: the Facade's lock recesses (measured). */
@@ -25,11 +27,12 @@ const LOCK_MM = 25
 /**
  * A Unit seen from the front, drawn to scale in the Layout's colours, after USSA's renders.
  * Drawer: a full-width facade with a label pill on the left and, level with it, a dark rotary lock with an
- * upright lever, a lock indicator and a plain cap; taller drawers split down the middle to the lock.
+ * upright lever, a lock indicator and a plain cap; taller drawers split down the middle to the lock. A Module
+ * holding several Boxes shows a Facade for each, stacked.
  * Sustainer: dark latches hanging from the top edge (one in the middle on S and M, two on L and XL, where the
  * Facade's lock recesses are), screws in the corners, a label pill bottom left.
  */
-export function UnitBlock({ kind, width, height, colours, scale, selected, label = true, trimPx = 0 }: Props) {
+export function UnitBlock({ kind, width, height, colours, scale, selected, label = true, trimPx = 0, boxes }: Props) {
   const w = WIDTH_MM[width]
   const h = rowHeightMm(height)
   const detailed = scale >= 0.3
@@ -46,18 +49,27 @@ export function UnitBlock({ kind, width, height, colours, scale, selected, label
     '--secondary': colours.secondary,
   } as CSSProperties
 
-  const pill = (bottom: number) => (
+  const pill = (bottom: number, code = sizeCode) => (
     <span className="unit-pill" style={{ left: mm(9), bottom: mm(bottom - 7), height: mm(14), minWidth: mm(40), borderRadius: mm(7), padding: `0 ${mm(5)}` }}>
-      {showText && sizeCode}
+      {showText && code}
     </span>
   )
 
   if (kind === 'drawer') {
-    const tall = h > 60
-    const lockBottom = tall ? LOCK_MM - 3 : h / 2 - 3
-    return (
-      <div className={`unit unit-drawer${selected ? ' is-selected' : ''}`} style={style} aria-hidden="true">
-        <div className="unit-facade" style={{ inset: mm(3), borderRadius: mm(6) }}>
+    // One Facade per Box, bottom first; a Module of one Box fills it.
+    const parts = boxes && boxes.length > 1 ? boxes : [height]
+    const mmPerFloor = h / parts.reduce((n, b) => n + FLOORS[b], 0)
+    const startFloors = parts.map((_, i) => parts.slice(0, i).reduce((n, b) => n + FLOORS[b], 0))
+    const facades = parts.map((box, i) => {
+      const fh = FLOORS[box] * mmPerFloor
+      const bottom = startFloors[i] * mmPerFloor
+      const tall = fh > 60
+      const lockBottom = tall ? LOCK_MM - 3 : fh / 2 - 3
+      const position = parts.length > 1
+        ? { left: mm(3), right: mm(3), bottom: mm(bottom + 3), height: `${(fh - 6) * scale - (i === parts.length - 1 ? trimPx : 0)}px` }
+        : { inset: mm(3) }
+      return (
+        <div key={i} className="unit-facade" style={{ ...position, borderRadius: mm(6) }}>
           {detailed && tall && (
             <>
               <span className="facade-split" style={{ bottom: mm(lockBottom + 12) }} />
@@ -65,7 +77,7 @@ export function UnitBlock({ kind, width, height, colours, scale, selected, label
               <span className="cap" style={{ right: mm(16), top: mm(12), width: mm(7) }} />
             </>
           )}
-          {detailed && pill(lockBottom)}
+          {detailed && pill(lockBottom, `${width} ${box}`)}
           <span className="lock" style={{ bottom: mm(lockBottom - 11), width: mm(22), height: mm(22) }}>
             <span className="lock-lever" style={{ width: mm(9), height: mm(25), borderRadius: mm(4.5), bottom: mm(6) }} />
           </span>
@@ -76,6 +88,11 @@ export function UnitBlock({ kind, width, height, colours, scale, selected, label
             </>
           )}
         </div>
+      )
+    })
+    return (
+      <div className={`unit unit-drawer${selected ? ' is-selected' : ''}`} style={style} aria-hidden="true">
+        {facades}
       </div>
     )
   }

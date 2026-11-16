@@ -119,8 +119,9 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
         // Units spread apart in proportion to how high they sit, and Columns of a split Row apart sideways.
         const sideways = row.columns.length > 1 || MODULE_WIDTH_MM[column.width] < towerW ? (frame.x0 + frame.w / 2 < 0 ? -40 : 40) : 0
         const groupSpread: Vec3 = [sideways, frame.y0 * UNIT_LIFT, 0]
+        const place = boxPlacer(tower, unit, frame, depth, options, measure)
         for (const line of unitLines(tower, unit, depth, options)) {
-          placeLine(line, (n) => unitPart(line.path, frame, n, unit, measure), groupSpread, unit.id, parts, options.catalog.get(line.path).outline, unit.id)
+          placeLine(line, (n) => place(line.path, n), groupSpread, unit.id, parts, options.catalog.get(line.path).outline, unit.id)
         }
       })
     })
@@ -185,6 +186,38 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
 
 /** How thick a backbone piece is, front to back (measured). */
 const BACKBONE_T = 33
+
+/**
+ * How copy n of a Unit's part is placed. A drawer Module holding several Boxes (issue #16) gives each Box its own
+ * slot, bottom first, a floor-high frame per floor it takes; each Box's parts (worked out as if it were a drawer
+ * of its own) go in its slot, the merged copies of a file handed out Box by Box, while the Module and its latches
+ * stay with the whole Module.
+ */
+function boxPlacer(
+  tower: EditorTower, unit: EditorStackedUnit, frame: Frame, depth: Depth, options: AssemblyOptions, measure: (p: string) => Vec3,
+): (path: string, n: number) => Placement | Placement[] {
+  const whole = (path: string, n: number) => unitPart(path, frame, n, unit, measure)
+  if (unit.kind !== 'drawer' || !unit.boxes || unit.boxes.length < 2) return whole
+  const boxes = unit.boxes
+  const starts = boxes.map((_, i) => boxes.slice(0, i).reduce((n, b) => n + floorsOf(b), 0))
+  const slots = boxes.map((box, i) => ({
+    unit: { ...unit, height: box, boxes: undefined } as EditorStackedUnit,
+    frame: { ...frame, y0: frame.y0 + starts[i] * FLOOR_PITCH_MM, h: floorsOf(box) * FLOOR_PITCH_MM },
+  }))
+  // Each Box's own parts, as a drawer of its height: how many copies of each file it takes.
+  const perBox = slots.map((s) => new Map(unitLines(tower, s.unit, depth, options).map((l) => [l.path, l.qty])))
+  return (path, n) => {
+    const file = name(path)
+    if (/\bmodule\b|latch/.test(file)) return whole(path, n)
+    let before = 0
+    for (const [i, counts] of perBox.entries()) {
+      const qty = counts.get(path) ?? 0
+      if (n < before + qty) return unitPart(path, slots[i].frame, n - before, slots[i].unit, measure)
+      before += qty
+    }
+    return whole(path, n)
+  }
+}
 
 /** Where each Unit of a Column starts, in mm up from the Row's bottom: empty floors below count 48 mm each. */
 function unitStartsMm(units: readonly EditorStackedUnit[]): number[] {
