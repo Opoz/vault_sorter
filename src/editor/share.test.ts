@@ -1,6 +1,7 @@
 import { deflateSync, strToU8 } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import { addTower, newLayout, placeUnit, updateLayout, type EditorLayout, type OpResult, type UnitSpec } from './layoutOps'
+import { paintedColour, paintPart } from './paint'
 import { decodeLayout, encodeLayout } from './share'
 
 const ok = (r: OpResult): EditorLayout => {
@@ -50,6 +51,21 @@ describe('share links', () => {
   })
 
   // Links get pasted into chats and browsers; keep them well under the lengths those handle.
+  // Paint names Units by id, and links leave ids out: it has to come back on the right Units (issue #7).
+  it('keeps painted parts on the same Units in the copy', () => {
+    const layout = bigLayout()
+    const tower = layout.towers[1]
+    const unit = tower.rows[1].columns[0].units[0]
+    const painted = ok(paintPart(ok(paintPart(layout, tower.id, { owner: unit.id, path: 'a.stl', copy: 0 }, '#c0392b', 'one')),
+      tower.id, { owner: 'tower', path: 'roof.stl', copy: 0 }, '#2e86de', 'all'))
+    const copy = decodeLayout(encodeLayout(painted))!
+    const copiedTower = copy.towers[1]
+    const copiedUnit = copiedTower.rows[1].columns[0].units[0]
+    expect(copiedUnit.id).not.toBe(unit.id)
+    expect(paintedColour(copiedTower, { owner: copiedUnit.id, path: 'a.stl', copy: 0 })).toBe('#c0392b')
+    expect(paintedColour(copiedTower, { owner: 'tower', path: 'roof.stl', copy: 3 })).toBe('#2e86de')
+  })
+
   it('keeps the link short', () => {
     expect(encodeLayout(bigLayout()).length).toBeLessThan(2000)
   })

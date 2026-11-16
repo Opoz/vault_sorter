@@ -19,6 +19,10 @@ export type Vec3 = readonly [x: number, y: number, z: number]
 export interface ScenePart {
   /** Stable across renders: the owner, the file and which copy. */
   readonly key: string
+  /** Whose part this is, for painting (editor/paint.ts): a Unit's id, `tower`, or `tower:<row>` for back pieces. */
+  readonly owner: string
+  /** Which copy of its file its owner has, from 0. */
+  readonly copy: number
   readonly path: string
   readonly role: ColourRole
   /** The Unit this Part belongs to; absent for the Tower's own parts (Roof, Base, Backbone and so on). */
@@ -161,7 +165,7 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
         const z = -towerD / 2 - (pegboard ? BACKBONE_T : 0) - t / 2
         const at = pegboard ? pegY : y
         parts.push({
-          key: `tower:${ri}:${line.path}:${n}`, path: line.path, role: line.role,
+          key: `tower:${ri}:${line.path}:${n}`, owner: `tower:${ri}`, copy: n, path: line.path, role: line.role,
           center: [0, at + h / 2, z], size: [w, h, t],
           groupSpread: [0, (at + h / 2) * UNIT_LIFT, -60], partSpread: [0, 0, pegboard ? -120 : -50], axes: STORED, checked: BACK_CHECK,
         })
@@ -256,7 +260,7 @@ function placeLine(
     // A file holding several loose pieces is placed piece by piece.
     const pieces = Array.isArray(placed) ? placed : [placed]
     pieces.forEach((p, i) => out.push({
-      key: `${owner}:${line.path}:${n}${Array.isArray(placed) ? `:${i}` : ''}`, path: line.path, role: line.role, unitId,
+      key: `${owner}:${line.path}:${n}${Array.isArray(placed) ? `:${i}` : ''}`, owner, copy: n, path: line.path, role: line.role, unitId,
       center: p.center, size: p.size, groupSpread, partSpread: p.spread, axes: p.axes ?? STORED,
       ...(p.checked ? { checked: p.checked } : {}),
       ...(p.slopeDeg ? { slopeDeg: p.slopeDeg } : {}),

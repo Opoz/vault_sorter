@@ -106,6 +106,8 @@ export interface EditorTower {
   readonly topHandles?: number
   /** How many of each part file have been printed so far (print progress); absent until something is. */
   readonly printed?: Printed
+  /** Parts painted another colour than their Colour role's (issue #7; see editor/paint.ts); absent when none are. */
+  readonly paint?: Readonly<Record<string, string>>
 }
 
 /** One colour per Colour role. */

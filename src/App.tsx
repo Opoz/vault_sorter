@@ -21,6 +21,9 @@ import { TowerView } from './ui/TowerView'
 import { UnitBlock } from './ui/UnitBlock'
 import { specKey } from './ui/text'
 import { pickInScene, useEditor, withoutPart, type Editor } from './ui/useEditor'
+import { paintedColour, paintPart, type PaintTarget } from './editor/paint'
+import { PaintBar, type PaintSettings } from './ui/PaintBar'
+import { PaintContext, type PaintContextValue } from './ui/paintContext'
 
 // three.js is large: only fetched when the 3D view is first opened.
 const TowerScene = lazy(() => import('./ui/TowerScene'))
@@ -134,6 +137,19 @@ export default function App() {
     try { window.localStorage.setItem(VIEW_KEY, v) } catch { /* a convenience only */ }
   }
   const sceneTowers = useMemo(() => towers.map((tower) => ({ tower, depth: info.get(tower.id)?.depth ?? tower.depth ?? 4 })), [towers, info])
+  // Painting parts (issue #7): a click paints the part instead of selecting it.
+  const [painting, setPainting] = useState(false)
+  const [paintSettings, setPaintSettings] = useState<PaintSettings>({ colour: '#c0392b', scope: 'one' })
+  const onPaint = useCallback((towerId: string, target: PaintTarget) => {
+    editor.apply(paintPart(editor.layout, towerId, target, paintSettings.colour, paintSettings.scope))
+  }, [editor, paintSettings])
+  const paintContext = useMemo((): PaintContextValue => ({
+    painting,
+    colourOf: (towerId, target) => { const t = towers.find((x) => x.id === towerId); return t ? paintedColour(t, target) : undefined },
+    onPaint,
+    depthOf: (towerId) => info.get(towerId)?.depth ?? towers.find((t) => t.id === towerId)?.depth ?? undefined,
+  }), [painting, towers, onPaint, info])
+  const paintBar = <PaintBar painting={painting} settings={paintSettings} onToggle={setPainting} onChange={setPaintSettings} />
 
   // Opening a share link (#share=…), on load or pasted into a tab already open: import it once, then take it out
   // of the address so a reload doesn't import it again.
@@ -225,6 +241,7 @@ export default function App() {
       {editor.unreadable.length > 0 && (
         <p className="banner">{editor.unreadable.length} saved layout(s) couldn't be read and were skipped.</p>
       )}
+      <PaintContext.Provider value={paintContext}>
       <DndContext sensors={sensors} collisionDetection={dropUnderPointer} measuring={MEASURING} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)}
         onDragOver={(e) => setOverTrash(e.over?.id === 'trash')}>
         <div className="workbench">
@@ -232,6 +249,7 @@ export default function App() {
           {view === '3d' ? (
             <main className="canvas canvas-3d" aria-label="Towers in 3D">
               <ViewToggle view={view} onChange={setView} />
+              {paintBar}
               <Suspense fallback={<p className="scene3d-loading">Loading the 3D view…</p>}>
                 <TowerScene
                   towers={sceneTowers}
@@ -243,6 +261,8 @@ export default function App() {
                   onPick={(towerId, unitId, path) => editor.setSelection(pickInScene(editor.selection, towerId, unitId, path))}
                   onClear={() => editor.setSelection(null)}
                   onUnpick={() => editor.setSelection(withoutPart(editor.selection))}
+                  painting={painting}
+                  onPaint={onPaint}
                 />
               </Suspense>
             </main>
@@ -256,6 +276,7 @@ export default function App() {
             })()}
             onClickEmpty={() => editor.setSelection(null)}>
             <ViewToggle view={view} onChange={setView} />
+            {paintBar}
             <div className="towers">
               {layout.towers.map((tower, i) => {
                 const t = info.get(tower.id)
@@ -312,6 +333,7 @@ export default function App() {
           document.body,
         )}
       </DndContext>
+      </PaintContext.Provider>
       {dropNotice && (
         <p className="drop-notice" role="alert" style={{ left: dropNotice.x, top: dropNotice.y }}>
           {dropNotice.text}

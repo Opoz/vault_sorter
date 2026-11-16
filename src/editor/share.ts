@@ -5,7 +5,8 @@
  */
 import { deflateSync, inflateSync, strFromU8, strToU8 } from 'fflate'
 import { HEIGHTS, WIDTHS } from '../engine/model'
-import type { EditorLayout } from './layoutOps'
+import type { EditorLayout, EditorTower } from './layoutOps'
+import { paintByPlace, paintFromPlace } from './paint'
 import { upgradeLayout } from './storage'
 
 const VERSION = '1'
@@ -17,6 +18,8 @@ export function encodeLayout(layout: EditorLayout): string {
     ...rest,
     towers: rest.towers.map(({ id: _t, printed: _printed, ...tower }) => ({
       ...tower,
+      // Paint names Units by id, which links leave out: by their place in the Tower instead.
+      paint: paintByPlace({ id: _t, ...tower }),
       rows: tower.rows.map(({ id: _r, ...row }) => ({
         ...row,
         columns: row.columns.map(({ id: _c, ...column }) => ({ ...column, units: column.units.map(({ id: _u, ...unit }) => unit) })),
@@ -33,7 +36,8 @@ export function decodeLayout(text: string): EditorLayout | undefined {
   try {
     const data = withIds(JSON.parse(strFromU8(inflateSync(fromBase64Url(body)))))
     if (!isLayoutShape(data)) return undefined
-    return upgradeLayout({ ...(data as object), id: crypto.randomUUID(), updatedAt: Date.now() })
+    const layout = upgradeLayout({ ...(data as object), id: crypto.randomUUID(), updatedAt: Date.now() })
+    return layout && { ...layout, towers: layout.towers.map((t: EditorTower) => paintFromPlace(t)) }
   } catch {
     return undefined
   }

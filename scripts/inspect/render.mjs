@@ -28,7 +28,7 @@ if (process.env.NOSEL !== '1') { await p.locator('.placed').first().click(); awa
 if (process.env.BOXES) { await p.getByLabel('Boxes in this module').selectOption(process.env.BOXES); await p.waitForTimeout(300) }
 if (process.argv[9] === 'plate') { await p.getByLabel('Gridfinity baseplate').selectOption({ index: 1 }); await p.waitForTimeout(200) }
 if (process.argv[9] === 'rails') { await p.getByLabel(/Geared rails/).check(); await p.waitForTimeout(200) }
-await p.getByRole('button', { name: '3D' }).click(); await p.waitForSelector('.scene3d canvas')
+await p.getByRole('button', { name: '3D', exact: true }).click(); await p.waitForSelector('.scene3d canvas')
 const chooser = p.waitForEvent('filechooser')
 await p.locator('.scene3d-note').getByRole('button', { name: 'Choose your Vault folder' }).click()
 await (await chooser).setFiles(VAULT)

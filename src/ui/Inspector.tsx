@@ -13,7 +13,10 @@ import {
 } from '../editor/layoutOps'
 import { depthMm } from './dims'
 import { printerLabel } from './data'
+import { ColorPicker } from './ColorPicker'
+import { rememberColour } from './colour'
 import { ExportPanel } from './ExportPanel'
+import { paintedCounts } from './paintTargets'
 import { describe } from './text'
 import type { Editor } from './useEditor'
 
@@ -292,6 +295,7 @@ function TowerPanel({ editor, tower, info, picked }: {
           onStep={(path, delta) => editor.apply(changePrinted(editor.layout, tower.id, { [path]: delta }))}
           onReprint={info.depth ? setReprint : undefined}
           marked={picked}
+          painted={info.depth && tower.paint ? paintedCounts(tower, info.depth, editor.printer, editor.layout.splitParts) : undefined}
         />
       )}
       {info.hardware && info.hardware.length > 0 && <HardwareSummary lines={info.hardware} />}
@@ -375,8 +379,10 @@ function ProgressSummary({ parts, printed, onReset }: { parts: PartLine[]; print
   )
 }
 
-function PartsSummary({ parts, colours, printed, onStep, onReprint, marked }: {
+function PartsSummary({ parts, colours, printed, onStep, onReprint, marked, painted }: {
   parts: PartLine[]; colours: Colours; printed: Printed; onStep: (path: string, delta: number) => void
+  /** Copies painted another colour, by file (issue #7): shown beside the line's own colour. */
+  painted?: ReadonlyMap<string, readonly { colour: string; count: number }[]>
   /** Print one copy of a part on its own, e.g. to replace one that failed or broke. */
   onReprint?: (path: string) => void
   /** A line to point out (a part picked in the 3D view): the list opens and scrolls to it. */
@@ -401,7 +407,21 @@ function PartsSummary({ parts, colours, printed, onStep, onReprint, marked }: {
             >
               <td className="qty">{l.qty}×</td>
               <td>
-                <span className={`swatch swatch-${l.role}`} aria-label={`${ROLE_NAME[l.role]} colour`} />
+                {(() => {
+                  // Painted copies show as their own colours; the rest stay in the line's colour role.
+                  const paint = painted?.get(l.path) ?? []
+                  const paintedQty = paint.reduce((n, p) => n + p.count, 0)
+                  return (
+                    <>
+                      {paintedQty < l.qty && <span className={`swatch swatch-${l.role}`} aria-label={`${ROLE_NAME[l.role]} colour`} />}
+                      {paint.map((p) => (
+                        <span key={p.colour} className="swatch swatch-painted" style={{ background: p.colour }} title={`${p.count} painted ${p.colour}`} aria-label={`${p.count} painted ${p.colour}`}>
+                          {paint.length > 1 || paintedQty < l.qty ? <span className="swatch-count">{p.count}</span> : null}
+                        </span>
+                      ))}
+                    </>
+                  )
+                })()}
                 {fileName(l.path)}
                 <cite className="line-source">{l.source}</cite>
                 {l.flags.map((f) => {
@@ -593,6 +613,8 @@ function TowerList({ editor, info }: { editor: Editor; info: Map<string, TowerIn
 function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, TowerInfo> }) {
   const { layout } = editor
   const set = (patch: Parameters<typeof updateLayout>[1]) => editor.apply(updateLayout(layout, patch))
+  // One colour picker open at a time, under its colour.
+  const [openRole, setOpenRole] = useState<ColourRole | null>(null)
   return (
     <section className="panel" aria-label="Layout settings">
       <h2>Layout</h2>
@@ -602,11 +624,27 @@ function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, Tower
       <fieldset className="colours">
         <legend>Colours</legend>
         {ROLES.map(({ role, name, covers }) => (
-          <label key={role} className="colour-row">
-            <input type="color" value={layout.colours[role]} onChange={(e) => set({ colours: { ...layout.colours, [role]: e.target.value } })} />
-            <span className="colour-name">{name}</span>
-            <span className="colour-covers small muted">{covers}</span>
-          </label>
+          <div key={role}>
+            <div className="colour-row">
+              <button
+                type="button"
+                className="colour-swatch"
+                style={{ background: layout.colours[role] }}
+                aria-label={`${name} colour, ${layout.colours[role]}: change`}
+                aria-expanded={openRole === role}
+                onClick={() => setOpenRole(openRole === role ? null : role)}
+              />
+              <span className="colour-name">{name}</span>
+              <span className="colour-covers small muted">{covers}</span>
+            </div>
+            {openRole === role && (
+              <ColorPicker
+                label={`${name} colour`}
+                value={layout.colours[role]}
+                onChange={(hex) => { set({ colours: { ...layout.colours, [role]: hex } }); rememberColour(hex) }}
+              />
+            )}
+          </div>
         ))}
       </fieldset>
       <Field label="Parts that come split">

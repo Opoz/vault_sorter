@@ -11,6 +11,7 @@ import type { Colours, EditorTower } from '../editor/layoutOps'
 import type { Depth } from '../engine/model'
 import { assembleTower, emptySpaces, explodedCenter, turnMatrix, type Axes, type ScenePart, type Vec3 } from '../scene/assembly'
 import { loadGeometry, pieceGeometry, squaredGeometry } from '../scene/meshCache'
+import { paintedColour, type PaintTarget } from '../editor/paint'
 import { QUALITIES, type Quality } from '../scene/simplify'
 import { catalog, type Printer } from './data'
 import { useVaultFolder } from './useVaultFolder'
@@ -34,6 +35,10 @@ export interface TowerSceneProps {
   readonly onClear: () => void
   /** Drops the picked part, keeping its owner selected (after hiding it). */
   readonly onUnpick: () => void
+  /** While painting (issue #7), a click paints the part instead of picking it. */
+  readonly painting?: boolean
+  /** A part was clicked while painting. */
+  readonly onPaint?: (towerId: string, target: PaintTarget) => void
 }
 
 /** How far the pointer may move between press and release and still count as a click, not an orbit. */
@@ -47,7 +52,8 @@ interface Placed {
   readonly apart: THREE.Box3
 }
 
-export default function TowerScene({ towers, colours, printer, splitParts, focusUnitId, picked, onPick, onClear, onUnpick }: TowerSceneProps) {
+export default function TowerScene({ towers, colours, printer, splitParts, focusUnitId, picked, onPick, onClear, onUnpick, painting, onPaint }: TowerSceneProps) {
+  const towerById = useMemo(() => new Map(towers.map((t) => [t.tower.id, t.tower])), [towers])
   const [spread, setSpread] = useState(0)
   // Parts hidden to see behind them, by owner and file: hiding one hides its copies in that owner (both pins, say).
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
@@ -182,7 +188,7 @@ ${p.key}`}
                 const piece = whole && p.piece !== undefined ? pieceGeometry(whole, p.piece) : whole
                 return piece && squaredGeometry(piece, p.planDeg ?? 0)
               })()}
-              colour={colours[p.role]}
+              colour={paintedColour(towerById.get(p.towerId) ?? {}, p) ?? colours[p.role]}
               faded={focus !== undefined && p.unitId !== focus}
               picked={isPicked(p)}
               onHover={setHovering}
@@ -191,7 +197,9 @@ ${p.key}`}
                 const faded = focus !== undefined && p.unitId !== focus
                 if (faded && e.intersections.some((i) => i.object.userData.focused)) return
                 e.stopPropagation()
-                if (isClick(e.nativeEvent)) onPick(p.towerId, p.unitId, p.path)
+                if (!isClick(e.nativeEvent)) return
+                if (painting && onPaint) onPaint(p.towerId, { owner: p.owner, path: p.path, copy: p.copy })
+                else onPick(p.towerId, p.unitId, p.path)
               }}
             />
           )

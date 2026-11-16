@@ -11,6 +11,9 @@ import { topHandleCount } from '../engine/parts'
 import { BASE_MM, belowBaseMm, CASTER, FEET_INSET_MM, FOOT_MM, HANDLE_MM, HEAVYWEIGHT_HANDLE_MM, PULL_OUT, LIP_MM, ROOF_MM, towerHeightMm, TYRE_WIDTH_MM, WHEEL_MM, WIDTH_MM, floorsHeightMm, FLOOR_MM } from './dims'
 import { describe } from './text'
 import { UnitBlock } from './UnitBlock'
+import { usePaint } from './paintContext'
+import type { PaintTarget } from '../editor/paint'
+import { drawingTargets } from './paintTargets'
 import type { Selection } from './useEditor'
 
 interface Props {
@@ -430,6 +433,15 @@ function PlacedUnit(props: {
     id: `unit:${unit.id}`,
     data: { type: 'unit', towerId, unitId: unit.id, spec: { kind: unit.kind, width: unit.width, height } },
   })
+  // Painted parts show in their colour; while painting, clicking a piece paints it instead of selecting or dragging.
+  const paintCtx = usePaint()
+  const depth = paintCtx?.depthOf(towerId)
+  const paint = paintCtx && depth ? {
+    targets: drawingTargets({ ...unit, height }, depth),
+    colourOf: (t: PaintTarget) => paintCtx.colourOf(towerId, t),
+    onPaint: paintCtx.painting ? (t: PaintTarget) => paintCtx.onPaint(towerId, t) : undefined,
+  } : undefined
+  const painting = !!paint?.onPaint
   return (
     <button
       ref={setNodeRef}
@@ -437,12 +449,12 @@ function PlacedUnit(props: {
       className={`placed${isDragging ? ' is-dragging' : ''}${blockedBy ? ' is-blocked' : ''}`}
       title={blockedBy ? `Doesn't fit the printer. ${blockedBy}` : undefined}
       aria-label={`${describe(unit.kind, unit.width, height)}${blockedBy ? `, doesn't fit the printer (${blockedBy})` : ''}, select to edit`}
-      onClick={() => onSelect({ type: 'unit', towerId, unitId: unit.id })}
-      {...listeners}
+      onClick={() => { if (!painting) onSelect({ type: 'unit', towerId, unitId: unit.id }) }}
+      {...(painting ? {} : listeners)}
       {...attributes}
       aria-pressed={selected}
     >
-      <UnitBlock kind={unit.kind} width={unit.width} height={height} colours={colours} scale={scale} selected={selected} trimPx={trimPx} boxes={unit.kind === 'drawer' ? unit.boxes : undefined} />
+      <UnitBlock kind={unit.kind} width={unit.width} height={height} colours={colours} scale={scale} selected={selected} trimPx={trimPx} boxes={unit.kind === 'drawer' ? unit.boxes : undefined} paint={paint} />
     </button>
   )
 }
