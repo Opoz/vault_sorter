@@ -319,10 +319,21 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       }
     }
     if (/rails/.test(file)) {
-      // Geared rails: one under the Box and one over it, front to back.
-      const size: Vec3 = [sz, sy, sx]
-      const y = n % 2 === 0 ? boxBottom - sy : boxBottom + boxH
-      return { center: sitting(cx, y, front - sx / 2 - 10, size), size, spread: add(boxSpread, [0, n % 2 === 0 ? -20 : 20, 0]), axes: along(2, 1, 0) }
+      // Geared rails run side to side in the Box's front notch, behind the Facade, one under and one over the key's
+      // gear: teeth toward the gear (Drawer Assembly p4, step 5). Each goes in from a side, plain end first, so the
+      // plain ends sit inside the Box pointing opposite ways and nothing sticks out past its sides (the user). The
+      // file holds the pair; they differ only in their end detail, so they're spaced by the 4.8 mm bar.
+      const gearR = 16
+      const bar = 4.8
+      const rail = (piece: 0 | 1): Placement => {
+        const under = piece === 0
+        return {
+          center: [cx + (under ? -5 : 5), midY + (under ? -1 : 1) * (gearR + bar / 2), front - sz / 2], size: [sx, sy / 2, sz],
+          spread: add(boxSpread, [0, under ? -15 : 15, 0]),
+          axes: under ? ['+x', '+y', '+z'] : ['-x', '-y', '+z'], checked: 'Drawer Assembly p4, step 5',
+        }
+      }
+      return [rail(0), rail(1)]
     }
   } else {
     // Sustainers: a Module open at the top, a lid (the Roof file) over it, a Facade on the front, hinges at the
