@@ -16,6 +16,9 @@ interface Props {
   trimPx?: number
 }
 
+/** Where a sustainer's latches sit across its width, as fractions: the Facade's lock recesses (measured). */
+const LATCHES: Record<Width, readonly number[]> = { S: [0.5], M: [0.5], L: [0.25, 0.75], XL: [0.5 - 127.1 / 418.8, 0.5 + 127.1 / 418.8] }
+
 /** Height of the lock's centre above the bottom of a drawer, the same at every height (from USSA's renders). */
 const LOCK_MM = 25
 
@@ -23,7 +26,8 @@ const LOCK_MM = 25
  * A Unit seen from the front, drawn to scale in the Layout's colours, after USSA's renders.
  * Drawer: a full-width facade with a label pill on the left and, level with it, a dark rotary lock with an
  * upright lever, a lock indicator and a plain cap; taller drawers split down the middle to the lock.
- * Sustainer: two dark latches hanging from the top edge, screws in the corners, a label pill bottom left.
+ * Sustainer: dark latches hanging from the top edge (one in the middle on S and M, two on L and XL, where the
+ * Facade's lock recesses are), screws in the corners, a label pill bottom left.
  */
 export function UnitBlock({ kind, width, height, colours, scale, selected, label = true, trimPx = 0 }: Props) {
   const w = WIDTH_MM[width]
@@ -79,7 +83,7 @@ export function UnitBlock({ kind, width, height, colours, scale, selected, label
   const latchH = Math.min(h * 0.62, 70)
   return (
     <div className={`unit unit-sustainer${selected ? ' is-selected' : ''}`} style={style} aria-hidden="true">
-      {[0.25, 0.75].map((x) => (
+      {LATCHES[width].map((x) => (
         <span
           key={x}
           className="latch"
