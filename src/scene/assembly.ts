@@ -98,8 +98,10 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
   // Units, row by row. A Row is as high as its tallest Column.
   let rowBottom = 0
   const rowBottoms: number[] = []
+  let topRowStart = 0
   for (const row of tower.rows) {
     rowBottoms.push(rowBottom)
+    topRowStart = parts.length
     const sides = columnSides(width, row.columns.map((c) => c.width), row.soloSide)
     row.columns.forEach((column, ci) => {
       const starts = unitStarts(column.units)
@@ -120,6 +122,12 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
   }
   const top = rowBottom
   const towerFrame: Frame = { x0: -towerW / 2, w: towerW, d: towerD, y0: 0, h: top }
+  // A sustainer stands taller than its floors (issue #17), so a Roof over one sits on its lid's top surface, the
+  // lid's stacking tabs (about 6 mm) reaching up into the Roof as a drawer Module's clips do.
+  const lidTops = parts.slice(topRowStart).filter((p) => /\broof\b/.test(name(p.path))).map((p) => p.center[1] + p.size[1] / 2 - 6)
+  // A drawer Module's body is 47 mm of its 48 mm floor (5 mm clips above, 5 mm feet below), so its top surface is
+  // 0.5 mm under the floor line; the Roof sits on that.
+  const roofFrame: Frame = { ...towerFrame, h: Math.max(top - 0.5, ...lidTops) }
 
   // The Roof, Base and what fixes to the back.
   const lines = towerLines(tower, depth, options)
@@ -128,7 +136,7 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
   for (const line of lines) {
     const group = towerGroup(line.path)
     const groupSpread: Vec3 = group === 'roof' ? [0, top * UNIT_LIFT + 80, 0] : group === 'bottom' ? [0, -80, 0] : [0, 0, -60]
-    placeLine(line, (n) => towerPart(line.path, towerFrame, n, line.qty, roofT, measure, options.catalog), groupSpread, 'tower', parts, options.catalog.get(line.path).outline)
+    placeLine(line, (n) => towerPart(line.path, group === 'roof' ? roofFrame : towerFrame, n, line.qty, roofT, measure, options.catalog), groupSpread, 'tower', parts, options.catalog.get(line.path).outline)
   }
   // Backbone and pegboard pieces, Row by Row.
   tower.rows.forEach((row, ri) => {
@@ -559,14 +567,18 @@ function towerPart(path: string, f: Frame, n: number, qty: number, roofT: number
     return { center: [cx, top + 40, 0], size: [a, c, b], spread: [0, 120, 0], axes: [r[0], r[2], r[1]] }
   }
   if (/top handle/.test(file)) {
-    const s = measure(path)
-    const [a, b, c] = ranked(s)
+    // A loop 126 mm long laid side to side on the roof, its grip opening (through the file's y) facing front to back
+    // and its flatter face (the file's +x) down on the roof, where the two M6 bolts go through (inferred).
+    const [sx, sy, sz] = measure(path)
     const x = f.x0 + ((n + 0.5) / qty) * f.w
-    return { center: [x, top + roofT + b / 2, 0], size: [a, b, c], spread: [0, 100, 0], axes: rankAxes(s) }
+    return { center: [x, top + roofT + sx / 2, 0], size: [sz, sx, sy], spread: [0, 100, 0], axes: ['+z', '-x', '-y'] }
   }
   if (/roof/.test(file)) {
+    // Roofs stand on end on the bed, turned: once squared up, the face every roof shares (a skirt 5–8 mm proud,
+    // fitting over the Module) is the file's −x, so that's the underside; the top (+x) is what differs: a grid, a
+    // bowl, a flat table. The file's +z end, with a little more detail, is taken to be the front (inferred).
     const t = thick(path)
-    return { center: sitting(cx, top, 0, [f.w, t, f.d]), size: [f.w, t, f.d], spread: [0, 0, 0], axes: along(0, 2, 1) }
+    return { center: sitting(cx, top, 0, [f.w, t, f.d]), size: [f.w, t, f.d], spread: [0, 0, 0], axes: ['-y', '+x', '+z'] }
   }
   if (/\bbase\b/.test(file)) {
     const t = thick(path)

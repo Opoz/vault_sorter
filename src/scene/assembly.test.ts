@@ -55,8 +55,10 @@ describe('assembleTower', () => {
       expect(boxTop(m)).toBeLessThanOrEqual(boxBottom(roof) + 0.01)
       expect(boxBottom(m)).toBeGreaterThanOrEqual(boxTop(base) - 0.01)
     }
-    // 1F + 3F + 2F = 6 floors of 48 mm.
-    expect(boxBottom(roof)).toBeCloseTo(6 * 48)
+    // 1F + 3F of rows below (4 floors of 48 mm), then the top Row's 2F sustainer, which stands taller than its two
+    // floors: its 84.8 mm Module and the lid's top surface 13.9 mm above it. The roof sits on that, the lid's tabs
+    // reaching up into it.
+    expect(boxBottom(roof)).toBeCloseTo(4 * 48 + 84.8 + 13.9)
   })
 
   it('places the columns of a split row side by side, left first', () => {
@@ -180,6 +182,16 @@ describe('runners', () => {
         }
       }
     }
+  })
+})
+
+describe('roof over a sustainer', () => {
+  it('sits on the lid top surface, which stands above the floor line', () => {
+    const scene = assembleTower(tower('S', [[[sustainer('S', '1F')]]]), 4, opts)
+    const lid = scene.find((p) => p.unitId && /roof/i.test(file(p)))!
+    const roof = scene.find((p) => !p.unitId && /grid roof/i.test(file(p)))!
+    // On its top surface, the 6 mm stacking tabs reaching up into the roof.
+    expect(boxBottom(roof)).toBeCloseTo(boxTop(lid) - 6)
   })
 })
 
