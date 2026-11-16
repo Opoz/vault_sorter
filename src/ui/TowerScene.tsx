@@ -10,7 +10,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { Colours, EditorTower } from '../editor/layoutOps'
 import type { Depth } from '../engine/model'
 import { assembleTower, emptySpaces, explodedCenter, turnMatrix, type Axes, type ScenePart, type Vec3 } from '../scene/assembly'
-import { loadGeometry, pieceGeometry } from '../scene/meshCache'
+import { loadGeometry, pieceGeometry, squaredGeometry } from '../scene/meshCache'
+import { QUALITIES, type Quality } from '../scene/simplify'
 import { catalog, type Printer } from './data'
 import { useVaultFolder } from './useVaultFolder'
 
@@ -46,6 +47,11 @@ interface Placed {
 
 export default function TowerScene({ towers, colours, printer, splitParts, focusUnitId, picked, onPick, onClear }: TowerSceneProps) {
   const [spread, setSpread] = useState(0)
+  const [quality, setQuality] = useState<Quality>(storedQuality)
+  const chooseQuality = (q: Quality) => {
+    setQuality(q)
+    try { localStorage.setItem(QUALITY_KEY, q) } catch { /* not remembered: fine */ }
+  }
   const [resetKey, setResetKey] = useState(0)
   // Over a part: the pointer shows it can be clicked.
   const [hovering, setHovering] = useState(false)
@@ -101,31 +107,40 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
 
   // Real parts from the Vault folder, by file, as they load.
   const vault = useVaultFolder()
-  const [meshes, setMeshes] = useState<{ source?: string; byPath: ReadonlyMap<string, THREE.BufferGeometry>; failed: number }>(
-    { byPath: new Map(), failed: 0 })
+  // `done` counts the files loaded at the current quality; byPath keeps the last quality's meshes on show until
+  // their replacements arrive.
+  const [meshes, setMeshes] = useState<{ source?: string; quality?: Quality; byPath: ReadonlyMap<string, THREE.BufferGeometry>; done: number; failed: number }>(
+    { byPath: new Map(), done: 0, failed: 0 })
   const paths = useMemo(() => [...new Set(placed.parts.map((p) => p.path))].sort().join('\n'), [placed])
   useEffect(() => {
     if (vault.folder.kind !== 'ready') return
     const source = vault.folder.source
     let live = true
     for (const path of paths ? paths.split('\n') : []) {
-      loadGeometry(source, path).then(
+      loadGeometry(source, path, quality).then(
         (g) => live && setMeshes((m) => {
-          const fresh = m.source !== source.name
-          const byPath = new Map(fresh ? [] : m.byPath)
+          const sameSource = m.source === source.name
+          const fresh = !sameSource || m.quality !== quality
+          const byPath = new Map(sameSource ? m.byPath : [])
           byPath.set(path, g)
-          return { source: source.name, byPath, failed: fresh ? 0 : m.failed }
+          return { source: source.name, quality, byPath, done: (fresh ? 0 : m.done) + 1, failed: fresh ? 0 : m.failed }
         }),
         (err: unknown) => {
           if (!live) return
           console.warn(`3D view: couldn't load ${path}:`, err)
-          setMeshes((m) => ({ source: source.name, byPath: m.source === source.name ? m.byPath : new Map(), failed: (m.source === source.name ? m.failed : 0) + 1 }))
+          setMeshes((m) => {
+            const sameSource = m.source === source.name
+            const fresh = !sameSource || m.quality !== quality
+            return { source: source.name, quality, byPath: sameSource ? m.byPath : new Map(), done: fresh ? 0 : m.done, failed: (fresh ? 0 : m.failed) + 1 }
+          })
         },
       )
     }
     return () => { live = false }
-  }, [vault.folder, paths])
+  }, [vault.folder, paths, quality])
   const ready = vault.folder.kind === 'ready' && meshes.source === vault.folder.source.name ? meshes : undefined
+  const loadedNow = ready && ready.quality === quality ? ready.done : 0
+  const failedNow = ready && ready.quality === quality ? ready.failed : 0
   const total = paths ? paths.split('\n').length : 0
 
   const floorY = placed.bounds.isEmpty() ? 0 : placed.bounds.min.y
@@ -153,10 +168,10 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
               center={[c[0] + p.offset, c[1], c[2]]}
               size={p.size}
               axes={p.axes}
-              planDeg={p.planDeg}
               geometry={(() => {
                 const whole = ready?.byPath.get(p.path)
-                return whole && p.piece !== undefined ? pieceGeometry(whole, p.piece) : whole
+                const piece = whole && p.piece !== undefined ? pieceGeometry(whole, p.piece) : whole
+                return piece && squaredGeometry(piece, p.planDeg ?? 0)
               })()}
               colour={colours[p.role]}
               faded={focus !== undefined && p.unitId !== focus}
@@ -181,12 +196,23 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
           <span>Apart</span>
         </label>
         <button type="button" onClick={() => setResetKey((k) => k + 1)}>Reset view</button>
+        <div className="scene3d-quality" role="group" aria-label="Detail">
+          <span>Detail</span>
+          {QUALITIES.map((q) => (
+            <button
+              key={q} type="button" aria-pressed={quality === q} onClick={() => chooseQuality(q)}
+              title={q === 'high' ? 'Sharpest; slower to load and to turn for a big tower' : q === 'low' ? 'Fastest' : undefined}
+            >
+              {q[0].toUpperCase() + q.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="scene3d-note">
         {vault.folder.kind === 'ready' ? (
           <>
-            {(ready?.byPath.size ?? 0) + (ready?.failed ?? 0) < total && <p>Loading the real parts: {ready?.byPath.size ?? 0} of {total}…</p>}
-            {(ready?.failed ?? 0) > 0 && <p>{ready!.failed} part file(s) couldn't be read from {vault.folder.source.name}, so they stay as boxes.</p>}
+            {loadedNow + failedNow < total && <p>Loading the real parts: {loadedNow} of {total}…</p>}
+            {failedNow > 0 && <p>{failedNow} part file(s) couldn't be read from {vault.folder.source.name}, so they stay as boxes.</p>}
             <p className="small">Real parts are placed by best guess for now; they're being checked against the manual.</p>
           </>
         ) : vault.folder.kind === 'needs-permission' ? (
@@ -222,19 +248,29 @@ const partLabel = (path: string) => path.split('/').pop()!.replace(/\.stl$/i, ''
 const PICKED_COLOUR = '#2f6feb'
 
 /** The turn from a file's stored axes to how the part sits, as a quaternion. */
-const turnOf = (axes: Axes, planDeg = 0) => {
+const QUALITY_KEY = 'vault-planner:3d-quality'
+/** The detail chosen last time, medium at first. */
+function storedQuality(): Quality {
+  try {
+    const q = localStorage.getItem(QUALITY_KEY)
+    return QUALITIES.includes(q as Quality) ? (q as Quality) : 'medium'
+  } catch {
+    return 'medium'
+  }
+}
+
+// A file stored turned on the bed arrives already squared up (squaredGeometry), so only `axes` turns it here.
+const turnOf = (axes: Axes) => {
   const m = turnMatrix(axes)
-  const turn = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(m[0], m[1], m[2], 0, m[3], m[4], m[5], 0, m[6], m[7], m[8], 0, 0, 0, 0, 1))
-  // A file stored turned on the bed is squared up first, about its own z.
-  return planDeg ? turn.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (planDeg * Math.PI) / 180)) : turn
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(m[0], m[1], m[2], 0, m[3], m[4], m[5], 0, m[6], m[7], m[8], 0, 0, 0, 0, 1))
 }
 
 /** A part: the real mesh when it has loaded, turned into place, otherwise a box at its measured size. */
-function PartBox({ center, size, axes, planDeg, geometry, colour, faded, picked, onClick, onHover }: {
-  center: Vec3; size: Vec3; axes: Axes; planDeg?: number; geometry?: THREE.BufferGeometry; colour: string; faded: boolean; picked: boolean
+function PartBox({ center, size, axes, geometry, colour, faded, picked, onClick, onHover }: {
+  center: Vec3; size: Vec3; axes: Axes; geometry?: THREE.BufferGeometry; colour: string; faded: boolean; picked: boolean
   onClick: (e: ThreeEvent<MouseEvent>) => void; onHover: (over: boolean) => void
 }) {
-  const turn = useMemo(() => turnOf(axes, planDeg), [axes, planDeg])
+  const turn = useMemo(() => turnOf(axes), [axes])
   const material = (
     <meshStandardMaterial
       key={`${faded ? 'faded' : 'solid'}-${geometry ? 'mesh' : 'box'}`}

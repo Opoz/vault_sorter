@@ -438,9 +438,12 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .canvas-3d { padding: 0; background-image: none; }
 .scene3d { position: relative; flex: 1; min-height: 420px; }
 .scene3d > div:first-child { position: absolute !important; inset: 0; }
-.scene3d-controls { position: absolute; left: 50%; bottom: 0.9rem; transform: translateX(-50%); display: flex; gap: 0.75rem; align-items: center; padding: 0.4rem 0.75rem; border-radius: 999px; background: var(--panel); box-shadow: 0 1px 4px rgb(36 39 42 / 0.2); font-size: 0.85rem; }
+.scene3d-controls { position: absolute; left: 50%; bottom: 0.9rem; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem 0.75rem; align-items: center; width: max-content; max-width: calc(100% - 2rem); padding: 0.4rem 0.75rem; border-radius: 1.2rem; background: var(--panel); box-shadow: 0 1px 4px rgb(36 39 42 / 0.2); font-size: 0.85rem; }
 .scene3d-spread { display: flex; gap: 0.5rem; align-items: center; }
 .scene3d-spread input { width: min(14rem, 40vw); }
+.scene3d-quality { display: flex; gap: 0.25rem; align-items: center; }
+.scene3d-quality > span { margin-right: 0.25rem; }
+.scene3d-quality button[aria-pressed='true'] { background: var(--select); border-color: var(--select); color: #fff; }
 .scene3d-note { position: absolute; left: 0.75rem; top: 0.75rem; max-width: 18rem; font-size: 0.8rem; color: var(--ink-soft); }
 .scene3d-note p { margin: 0 0 0.3rem; }
 .scene3d-loading { margin: auto; color: var(--ink-soft); }

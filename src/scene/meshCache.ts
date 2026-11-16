@@ -5,20 +5,21 @@
 import * as THREE from 'three'
 import type { VaultSource } from '../export/vaultFolder'
 import type { MeshReply, MeshRequest } from './meshWorker'
+import type { Quality } from './simplify'
 
 const WORKERS = 2
 const cache = new Map<string, Promise<THREE.BufferGeometry>>()
 let pool: { worker: Worker; busy: boolean }[] = []
-const queue: { file: () => Promise<File>; resolve: (g: THREE.BufferGeometry) => void; reject: (e: Error) => void }[] = []
+const queue: { file: () => Promise<File>; quality: Quality; resolve: (g: THREE.BufferGeometry) => void; reject: (e: Error) => void }[] = []
 let nextId = 0
 
-/** The display mesh for one part file of this folder. */
-export function loadGeometry(source: VaultSource, path: string): Promise<THREE.BufferGeometry> {
-  const key = `${source.name}\n${path}`
+/** The display mesh for one part file of this folder, at the chosen quality. */
+export function loadGeometry(source: VaultSource, path: string, quality: Quality = 'medium'): Promise<THREE.BufferGeometry> {
+  const key = `${source.name}\n${path}\n${quality}`
   let found = cache.get(key)
   if (!found) {
     found = new Promise((resolve, reject) => {
-      queue.push({ file: () => source.readFile(path), resolve, reject })
+      queue.push({ file: () => source.readFile(path), quality, resolve, reject })
       pump()
     })
     // A failed read can be tried again later, e.g. after choosing another folder.
@@ -48,7 +49,7 @@ function pump() {
         else job.resolve(toGeometry(e.data.positions, e.data.index, e.data.pieces))
         done()
       }
-      slot.worker.postMessage({ id, file } satisfies MeshRequest)
+      slot.worker.postMessage({ id, file, quality: job.quality } satisfies MeshRequest)
     }, (err: unknown) => {
       job.reject(err instanceof Error ? err : new Error(String(err)))
       done()
@@ -99,4 +100,26 @@ export function pieceGeometry(whole: THREE.BufferGeometry, piece: number): THREE
   }
   made[piece] = toGeometry(Float32Array.from(positions), sub, new Uint32Array([0, count]))
   return made[piece]
+}
+
+const squaredCache = new WeakMap<THREE.BufferGeometry, Map<number, THREE.BufferGeometry>>()
+
+/**
+ * A mesh stored turned on the bed, squared up by `deg` about its z and centred again on its middle. Centring on
+ * the turned file's box would leave anything lopsided (a latch pocket at one end) a few mm off once squared up.
+ */
+export function squaredGeometry(g: THREE.BufferGeometry, deg: number): THREE.BufferGeometry {
+  if (!deg) return g
+  let byDeg = squaredCache.get(g)
+  if (!byDeg) { byDeg = new Map(); squaredCache.set(g, byDeg) }
+  let made = byDeg.get(deg)
+  if (!made) {
+    made = g.clone().rotateZ((deg * Math.PI) / 180)
+    made.computeBoundingBox()
+    const c = made.boundingBox!.getCenter(new THREE.Vector3())
+    made.translate(-c.x, -c.y, -c.z)
+    made.computeBoundingBox()
+    byDeg.set(deg, made)
+  }
+  return made
 }

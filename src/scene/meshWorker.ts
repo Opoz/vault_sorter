@@ -4,19 +4,20 @@
  * big files load. The file comes from the user's own folder and goes nowhere else (docs/adr/0004).
  */
 import { readStl } from '../export/stl'
-import { binaryStlCorners, simplify, splitPieces } from './simplify'
+import { binaryStlCorners, QUALITY_SETTINGS, simplify, splitPieces, type Quality } from './simplify'
 
-export interface MeshRequest { readonly id: number; readonly file: File }
+export interface MeshRequest { readonly id: number; readonly file: File; readonly quality: Quality }
 export type MeshReply =
   | { readonly id: number; readonly positions: Float32Array; readonly index: Uint32Array; readonly pieces: Uint32Array }
   | { readonly id: number; readonly error: string }
 
 self.onmessage = async (e: MessageEvent<MeshRequest>) => {
-  const { id, file } = e.data
+  const { id, file, quality } = e.data
   try {
     const buffer = await file.arrayBuffer()
     const corners = binaryStlCorners(buffer) ?? textCorners(buffer)
-    const mesh = splitPieces(simplify(corners))
+    const { target, firstCell } = QUALITY_SETTINGS[quality]
+    const mesh = splitPieces(simplify(corners, target, firstCell))
     const reply: MeshReply = { id, positions: mesh.positions, index: mesh.index, pieces: mesh.pieces }
     ;(self as unknown as Worker).postMessage(reply, [mesh.positions.buffer, mesh.index.buffer, mesh.pieces.buffer])
   } catch (err) {

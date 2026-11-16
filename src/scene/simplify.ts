@@ -18,6 +18,16 @@ export const TARGET_TRIANGLES = 150_000
 const FIRST_CELL_MM = 0.5
 const LAST_CELL_MM = 8
 
+/** How much detail the 3D view keeps, chosen by the user: more is sharper but slower to load and draw. */
+export type Quality = 'low' | 'medium' | 'high'
+export const QUALITIES: readonly Quality[] = ['low', 'medium', 'high']
+/** Per quality: the triangle target and the finest grid tried. */
+export const QUALITY_SETTINGS: Record<Quality, { readonly target: number; readonly firstCell: number }> = {
+  low: { target: 40_000, firstCell: 1 },
+  medium: { target: TARGET_TRIANGLES, firstCell: FIRST_CELL_MM },
+  high: { target: 1_000_000, firstCell: 0.125 },
+}
+
 /** A binary STL's triangle corners, 9 floats per triangle; null if the buffer isn't binary STL. */
 export function binaryStlCorners(buffer: ArrayBuffer): Float32Array | null {
   if (buffer.byteLength < 84) return null
@@ -65,10 +75,10 @@ export function cluster(corners: Float32Array, cell: number): DisplayMesh {
 }
 
 /** A display copy of a mesh: the finest grid that meets the triangle target. */
-export function simplify(corners: Float32Array, target = TARGET_TRIANGLES): DisplayMesh {
+export function simplify(corners: Float32Array, target = TARGET_TRIANGLES, firstCell = FIRST_CELL_MM): DisplayMesh {
   if (corners.length / 9 <= target) return cluster(corners, 0.01)
-  let mesh = cluster(corners, FIRST_CELL_MM)
-  for (let cell = FIRST_CELL_MM * 2; mesh.index.length / 3 > target && cell <= LAST_CELL_MM; cell *= 2) mesh = cluster(corners, cell)
+  let mesh = cluster(corners, firstCell)
+  for (let cell = firstCell * 2; mesh.index.length / 3 > target && cell <= LAST_CELL_MM; cell *= 2) mesh = cluster(corners, cell)
   return mesh
 }
 
