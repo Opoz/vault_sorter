@@ -22,6 +22,13 @@ export function pickInScene(current: Selection, towerId: string, unitId: string 
   return { ...current!, part: path }
 }
 
+/** The same selection with no part picked out (its Unit or Tower stays selected). */
+export function withoutPart(current: Selection): Selection {
+  if (!current) return current
+  const { part: _part, ...owner } = current
+  return owner
+}
+
 const PRINTER_KEY = 'vault-planner:printer'
 const CURRENT_KEY = 'vault-planner:current'
 

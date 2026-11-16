@@ -32,6 +32,8 @@ export interface TowerSceneProps {
   readonly onPick: (towerId: string, unitId: string | undefined, path: string) => void
   /** Empty space was clicked. */
   readonly onClear: () => void
+  /** Drops the picked part, keeping its owner selected (after hiding it). */
+  readonly onUnpick: () => void
 }
 
 /** How far the pointer may move between press and release and still count as a click, not an orbit. */
@@ -45,8 +47,11 @@ interface Placed {
   readonly apart: THREE.Box3
 }
 
-export default function TowerScene({ towers, colours, printer, splitParts, focusUnitId, picked, onPick, onClear }: TowerSceneProps) {
+export default function TowerScene({ towers, colours, printer, splitParts, focusUnitId, picked, onPick, onClear, onUnpick }: TowerSceneProps) {
   const [spread, setSpread] = useState(0)
+  // Parts hidden to see behind them, by owner and file: hiding one hides its copies in that owner (both pins, say).
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
+  const hideKey = (towerId: string, unitId: string | undefined, path: string) => `${towerId}\n${unitId ?? ''}\n${path}`
   const [quality, setQuality] = useState<Quality>(storedQuality)
   const chooseQuality = (q: Quality) => {
     setQuality(q)
@@ -160,11 +165,13 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
         <directionalLight position={[-2000, 800, -1000]} intensity={0.5} />
         <Controls target={view.target} distance={view.distance} resetKey={resetKey} />
         <gridHelper args={[6000, 60, '#c4c8c6', '#d9dcdb']} position={[0, floorY - 1, 0]} />
-        {placed.parts.map((p) => {
+        {placed.parts.filter((p) => !hidden.has(hideKey(p.towerId, p.unitId, p.path))).map((p) => {
           const c = explodedCenter(p, spread, focus)
           return (
             <PartBox
-              key={p.key}
+              // Part keys are unique within a Tower; several Towers can show at once.
+              key={`${p.towerId}
+${p.key}`}
               center={[c[0] + p.offset, c[1], c[2]]}
               size={p.size}
               axes={p.axes}
@@ -197,6 +204,9 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
           <span>Apart</span>
         </label>
         <button type="button" onClick={() => setResetKey((k) => k + 1)}>Reset view</button>
+        {hidden.size > 0 && (
+          <button type="button" onClick={() => setHidden(new Set())}>Show all ({hidden.size} hidden)</button>
+        )}
         <div className="scene3d-quality" role="group" aria-label="Detail">
           <span>Detail</span>
           {QUALITIES.map((q) => (
@@ -231,7 +241,20 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
           </p>
         ) : null}
       </div>
-      {picked && placed.parts.some(isPicked) && <p className="scene3d-picked">{partLabel(picked.path)}</p>}
+      {picked && placed.parts.some(isPicked) && (
+        <div className="scene3d-picked">
+          <span>{partLabel(picked.path)}</span>
+          <button
+            type="button"
+            onClick={() => {
+              setHidden((h) => new Set(h).add(hideKey(picked.towerId, focus, picked.path)))
+              onUnpick()
+            }}
+          >
+            Hide
+          </button>
+        </div>
+      )}
     </div>
   )
 }

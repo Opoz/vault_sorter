@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pickInScene } from './useEditor'
+import { pickInScene, withoutPart } from './useEditor'
 
 describe('pickInScene', () => {
   const box = 'drawers/S3 Box 1F.stl'
@@ -14,5 +14,13 @@ describe('pickInScene', () => {
     const roof = 'drawers/S3 Grid Roof.stl'
     expect(pickInScene({ type: 'unit', towerId: 't', unitId: 'u1' }, 't', undefined, roof)).toEqual({ type: 'tower', towerId: 't' })
     expect(pickInScene({ type: 'tower', towerId: 't' }, 't', undefined, roof)).toEqual({ type: 'tower', towerId: 't', part: roof })
+  })
+})
+
+describe('withoutPart', () => {
+  it('drops the picked part but keeps its owner selected', () => {
+    expect(withoutPart({ type: 'unit', towerId: 't', unitId: 'u', part: 'a.stl' })).toEqual({ type: 'unit', towerId: 't', unitId: 'u' })
+    expect(withoutPart({ type: 'tower', towerId: 't' })).toEqual({ type: 'tower', towerId: 't' })
+    expect(withoutPart(null)).toBeNull()
   })
 })

@@ -20,7 +20,7 @@ import { Palette, PALETTE_SCALE } from './ui/Palette'
 import { TowerView } from './ui/TowerView'
 import { UnitBlock } from './ui/UnitBlock'
 import { specKey } from './ui/text'
-import { pickInScene, useEditor, type Editor } from './ui/useEditor'
+import { pickInScene, useEditor, withoutPart, type Editor } from './ui/useEditor'
 
 // three.js is large: only fetched when the 3D view is first opened.
 const TowerScene = lazy(() => import('./ui/TowerScene'))
@@ -239,6 +239,7 @@ export default function App() {
                   picked={editor.selection?.part ? { towerId: editor.selection.towerId, path: editor.selection.part } : undefined}
                   onPick={(towerId, unitId, path) => editor.setSelection(pickInScene(editor.selection, towerId, unitId, path))}
                   onClear={() => editor.setSelection(null)}
+                  onUnpick={() => editor.setSelection(withoutPart(editor.selection))}
                 />
               </Suspense>
             </main>
