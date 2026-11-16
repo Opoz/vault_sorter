@@ -1,4 +1,4 @@
-import { cloneElement, useId, useState, type CSSProperties } from 'react'
+import { cloneElement, useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import type { DepthChoice } from '../engine/depth'
 import type { Baseplate, Depth, RoofType, Width } from '../engine/model'
 import type { TowerDimensions } from '../engine/dimensions'
@@ -41,10 +41,14 @@ export function Inspector({ editor, info }: { editor: Editor; info: Map<string, 
       {tower && (unit
         ? <button type="button" className="link" onClick={() => editor.setSelection({ type: 'tower', towerId: tower.id })}>Tower {index + 1}</button>
         : <span>Tower {index + 1}</span>)}
-      {unit && <><span aria-hidden="true">›</span><span>{describe(unit.kind, unit.width, unit.height)}</span></>}
+      {unit && <><span aria-hidden="true">›</span>{selection?.part
+        ? <button type="button" className="link" onClick={() => editor.setSelection({ type: 'unit', towerId: tower!.id, unitId: unit.id })}>{describe(unit.kind, unit.width, unit.height)}</button>
+        : <span>{describe(unit.kind, unit.width, unit.height)}</span>}</>}
+      {selection?.part && <><span aria-hidden="true">›</span><span>{fileName(selection.part)}</span></>}
     </nav>
   )
 
+  if (tower && selection?.part) return <>{crumbs}<TowerPanel editor={editor} tower={tower} info={info.get(tower.id) ?? {}} picked={selection.part} /></>
   if (tower && unit) return <>{crumbs}<UnitPanel editor={editor} tower={tower} unit={unit} height={unit.height} /></>
   if (tower) return <>{crumbs}<TowerPanel editor={editor} tower={tower} info={info.get(tower.id) ?? {}} /></>
   return <LayoutPanel editor={editor} info={info} />
@@ -110,7 +114,11 @@ const ROOFS: { value: RoofType; label: string }[] = [
   { value: 'none', label: 'No roof' },
 ]
 
-function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTower; info: TowerInfo }) {
+function TowerPanel({ editor, tower, info, picked }: {
+  editor: Editor; tower: EditorTower; info: TowerInfo
+  /** A part picked out in the 3D view: its parts-list line is marked. */
+  picked?: string
+}) {
   // A part picked in the parts list to print on its own; the print files section offers to save it.
   const [reprint, setReprint] = useState<string | undefined>()
   const set = (patch: Parameters<typeof updateTower>[2]) => editor.apply(updateTower(editor.layout, tower.id, patch))
@@ -118,6 +126,21 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
   const problems = rowProblems(tower)
   return (
     <section className="panel" aria-label="Selected tower">
+      {picked && (() => {
+        const line = info.parts?.find((l) => l.path === picked)
+        return (
+          <div className="picked-part" style={swatches(editor.layout.colours)}>
+            <p>
+              {line && <span className={`swatch swatch-${line.role}`} aria-label={`${ROLE_NAME[line.role]} colour`} />}
+              <strong>{fileName(picked)}</strong>
+              {line && <>, {line.qty} in this tower</>}
+            </p>
+            {line && info.depth
+              ? <button type="button" className="link" onClick={() => setReprint(picked)}>Print one</button>
+              : !line && <p className="hint">The parts list appears once the tower is finished.</p>}
+          </div>
+        )
+      })()}
       <h2>Tower {index + 1}</h2>
       {(() => {
         const widths = (['S', 'M', 'L', 'XL'] as Width[]).map((w) => {
@@ -250,6 +273,7 @@ function TowerPanel({ editor, tower, info }: { editor: Editor; tower: EditorTowe
           printed={tower.printed ?? {}}
           onStep={(path, delta) => editor.apply(changePrinted(editor.layout, tower.id, { [path]: delta }))}
           onReprint={info.depth ? setReprint : undefined}
+          marked={picked}
         />
       )}
       {info.hardware && info.hardware.length > 0 && <HardwareSummary lines={info.hardware} />}
@@ -333,22 +357,30 @@ function ProgressSummary({ parts, printed, onReset }: { parts: PartLine[]; print
   )
 }
 
-function PartsSummary({ parts, colours, printed, onStep, onReprint }: {
+function PartsSummary({ parts, colours, printed, onStep, onReprint, marked }: {
   parts: PartLine[]; colours: Colours; printed: Printed; onStep: (path: string, delta: number) => void
   /** Print one copy of a part on its own, e.g. to replace one that failed or broke. */
   onReprint?: (path: string) => void
+  /** A line to point out (a part picked in the 3D view): the list opens and scrolls to it. */
+  marked?: string
 }) {
+  const markedRow = useRef<HTMLTableRowElement>(null)
+  useEffect(() => { markedRow.current?.scrollIntoView({ block: 'nearest' }) }, [marked])
   const total = parts.reduce((s, l) => s + l.qty, 0)
   const flagged = parts.filter((l) => l.flags.length > 0)
   const { byPath } = partProgress(parts, printed)
   const seen = new Set<string>()
   return (
-    <details className="parts" style={swatches(colours)}>
+    <details className="parts" style={swatches(colours)} open={marked && parts.some((l) => l.path === marked) ? true : undefined}>
       <summary>{total} parts to print{flagged.length ? `, ${flagged.length} need checking` : ''}</summary>
       <table>
         <tbody>
           {parts.map((l) => (
-            <tr key={l.path} className={`${l.flags.length ? 'is-flagged' : ''}${byPath.get(l.path) === l.qty ? ' is-printed' : ''}`}>
+            <tr
+              key={l.path}
+              ref={l.path === marked ? markedRow : undefined}
+              className={`${l.flags.length ? 'is-flagged' : ''}${byPath.get(l.path) === l.qty ? ' is-printed' : ''}${l.path === marked ? ' is-marked' : ''}`}
+            >
               <td className="qty">{l.qty}×</td>
               <td>
                 <span className={`swatch swatch-${l.role}`} aria-label={`${ROLE_NAME[l.role]} colour`} />

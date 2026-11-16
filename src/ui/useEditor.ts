@@ -4,10 +4,23 @@ import { decodeLayout, encodeLayout } from '../editor/share'
 import { createLayoutStore, type KeyValueStorage } from '../editor/storage'
 import { DEFAULT_PRINTER_ID, findPrinter, type Printer } from './data'
 
+/** What's selected; `part` is a part file picked out in the 3D view (the Tower's own part, or the Unit's). */
 export type Selection =
-  | { readonly type: 'tower'; readonly towerId: string }
-  | { readonly type: 'unit'; readonly towerId: string; readonly unitId: string }
+  | { readonly type: 'tower'; readonly towerId: string; readonly part?: string }
+  | { readonly type: 'unit'; readonly towerId: string; readonly unitId: string; readonly part?: string }
   | null
+
+/**
+ * What a click on a part in the 3D view selects: its Unit (or, for the Tower's own parts, its Tower) the first
+ * time, then the part itself once its owner is already selected.
+ */
+export function pickInScene(current: Selection, towerId: string, unitId: string | undefined, path: string): Selection {
+  const ownerSelected = unitId
+    ? current?.type === 'unit' && current.unitId === unitId
+    : current?.type === 'tower' && current.towerId === towerId
+  if (!ownerSelected) return unitId ? { type: 'unit', towerId, unitId } : { type: 'tower', towerId }
+  return { ...current!, part: path }
+}
 
 const PRINTER_KEY = 'vault-planner:printer'
 const CURRENT_KEY = 'vault-planner:current'

@@ -2,7 +2,7 @@
  * The 3D view of a Layout's Towers, assembled or pulled apart (issue #9). View only: editing stays on the 2D
  * drawing and in the inspector. Parts are plain boxes at their measured size for now.
  */
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -22,24 +22,40 @@ export interface TowerSceneProps {
   readonly splitParts: 'auto' | 'whole' | 'split'
   /** The selected Unit: the view zooms to it and only it comes apart. */
   readonly focusUnitId?: string
+  /** A part picked out: highlighted, with its name shown. Its owner is the focus Unit, or the Tower when there's none. */
+  readonly picked?: { readonly towerId: string; readonly path: string }
+  /** A part was clicked: its Tower, its Unit (none for the Tower's own parts) and its file. */
+  readonly onPick: (towerId: string, unitId: string | undefined, path: string) => void
+  /** Empty space was clicked. */
+  readonly onClear: () => void
 }
 
+/** How far the pointer may move between press and release and still count as a click, not an orbit. */
+const CLICK_SLOP_PX = 5
+
 interface Placed {
-  readonly parts: readonly (ScenePart & { readonly offset: number })[]
+  readonly parts: readonly (ScenePart & { readonly offset: number; readonly towerId: string })[]
   readonly spaces: readonly { center: Vec3; size: Vec3 }[]
   readonly bounds: THREE.Box3
   /** Assembled and fully apart together: what the camera frames, so pulling apart never runs off screen. */
   readonly apart: THREE.Box3
 }
 
-export default function TowerScene({ towers, colours, printer, splitParts, focusUnitId }: TowerSceneProps) {
+export default function TowerScene({ towers, colours, printer, splitParts, focusUnitId, picked, onPick, onClear }: TowerSceneProps) {
   const [spread, setSpread] = useState(0)
   const [resetKey, setResetKey] = useState(0)
+  // Over a part: the pointer shows it can be clicked.
+  const [hovering, setHovering] = useState(false)
+  // Where the pointer went down, to tell a click from the end of an orbit.
+  const down = useRef<{ x: number; y: number } | null>(null)
+  const isClick = (e: { clientX: number; clientY: number }) =>
+    !!down.current && Math.hypot(e.clientX - down.current.x, e.clientY - down.current.y) <= CLICK_SLOP_PX
 
   const placed = useMemo((): Placed => {
-    const parts: (ScenePart & { offset: number })[] = []
+    const parts: (ScenePart & { offset: number; towerId: string })[] = []
     const spaces: { center: Vec3; size: Vec3 }[] = []
     const groups = towers.map(({ tower, depth }) => ({
+      towerId: tower.id,
       parts: assembleTower(tower, depth, { catalog, printer, splitParts }),
       spaces: emptySpaces(tower, depth),
     }))
@@ -52,7 +68,7 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
     groups.forEach((g, i) => {
       if (widths[i] === 0) return
       const offset = x + widths[i] / 2
-      parts.push(...g.parts.map((p) => ({ ...p, offset })))
+      parts.push(...g.parts.map((p) => ({ ...p, offset, towerId: g.towerId })))
       spaces.push(...g.spaces.map((s) => ({ ...s, center: [s.center[0] + offset, s.center[1], s.center[2]] as Vec3 })))
       x += widths[i] + TOWER_GAP_MM
     })
@@ -71,23 +87,26 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
   const view = useMemo(() => {
     const box = new THREE.Box3()
     if (focus) {
-      for (const p of placed.parts.filter((q) => q.unitId === focus)) {
-        box.union(boxOf([p.center[0] + p.offset, p.center[1], p.center[2]], p.size))
-        const c = explodedCenter(p, 1, focus)
-        box.union(boxOf([c[0] + p.offset, c[1], c[2]], p.size))
-      }
+      // Close in on the assembled Unit; pulled apart, its parts come toward the camera.
+      for (const p of placed.parts.filter((q) => q.unitId === focus)) box.union(boxOf([p.center[0] + p.offset, p.center[1], p.center[2]], p.size))
     } else box.copy(placed.apart)
     if (box.isEmpty()) box.set(new THREE.Vector3(-200, 0, -200), new THREE.Vector3(200, 400, 200))
     // Far enough back for the whole box to fit in the 35° view.
     const radius = box.getBoundingSphere(new THREE.Sphere()).radius
-    return { target: box.getCenter(new THREE.Vector3()), distance: (radius / Math.sin((FOV / 2) * (Math.PI / 180))) * (focus ? 1 : 0.8) }
+    return { target: box.getCenter(new THREE.Vector3()), distance: (radius / Math.sin((FOV / 2) * (Math.PI / 180))) * (focus ? 1.5 : 0.8) }
   }, [placed, focus])
 
   const floorY = placed.bounds.isEmpty() ? 0 : placed.bounds.min.y
+  // The picked part's copies within its owner (both runners of a drawer, say).
+  const isPicked = (p: Placed['parts'][number]) =>
+    !!picked && p.towerId === picked.towerId && p.path === picked.path && p.unitId === focus
 
   return (
-    <div className="scene3d">
-      <Canvas camera={{ fov: FOV, near: 5, far: 50000 }} dpr={[1, 2]}>
+    <div className="scene3d" style={{ cursor: hovering ? 'pointer' : undefined }} onPointerDown={(e) => { down.current = { x: e.clientX, y: e.clientY } }}>
+      <Canvas
+        camera={{ fov: FOV, near: 5, far: 50000 }} dpr={[1, 2]}
+        onPointerMissed={(e) => { if (isClick(e)) onClear() }}
+      >
         <color attach="background" args={['#eef0ef']} />
         <hemisphereLight args={['#ffffff', '#8a8f93', 1.4]} />
         <directionalLight position={[1500, 2500, 2000]} intensity={1.6} />
@@ -103,6 +122,15 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
               size={p.size}
               colour={colours[p.role]}
               faded={focus !== undefined && p.unitId !== focus}
+              picked={isPicked(p)}
+              onHover={setHovering}
+              onClick={(e) => {
+                // A faded part in front of the chosen Unit lets the click through to it.
+                const faded = focus !== undefined && p.unitId !== focus
+                if (faded && e.intersections.some((i) => i.object.userData.focused)) return
+                e.stopPropagation()
+                if (isClick(e.nativeEvent)) onPick(p.towerId, p.unitId, p.path)
+              }}
             />
           )
         })}
@@ -117,6 +145,7 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
         <button type="button" onClick={() => setResetKey((k) => k + 1)}>Reset view</button>
       </div>
       <p className="scene3d-note">Parts are shown as plain boxes. Choose your Vault folder to see the real parts.</p>
+      {picked && placed.parts.some(isPicked) && <p className="scene3d-picked">{partLabel(picked.path)}</p>}
     </div>
   )
 }
@@ -128,14 +157,37 @@ const boxOf = (center: Vec3, size: Vec3) =>
 const CUBE = new THREE.BoxGeometry(1, 1, 1)
 const CUBE_EDGES = new THREE.EdgesGeometry(CUBE)
 
-function PartBox({ center, size, colour, faded }: { center: Vec3; size: Vec3; colour: string; faded: boolean }) {
+/** A part's file name without folder or extension, as the parts list shows it. */
+const partLabel = (path: string) => path.split('/').pop()!.replace(/\.stl$/i, '')
+
+const PICKED_COLOUR = '#2f6feb'
+
+function PartBox({ center, size, colour, faded, picked, onClick, onHover }: {
+  center: Vec3; size: Vec3; colour: string; faded: boolean; picked: boolean
+  onClick: (e: ThreeEvent<MouseEvent>) => void; onHover: (over: boolean) => void
+}) {
   return (
     <group position={center} scale={size}>
-      <mesh geometry={CUBE}>
-        <meshStandardMaterial color={colour} roughness={0.75} transparent={faded} opacity={faded ? 0.15 : 1} depthWrite={!faded} />
+      <mesh
+        geometry={CUBE}
+        userData={{ focused: !faded }}
+        onClick={onClick}
+        onPointerOver={(e) => { e.stopPropagation(); onHover(true) }}
+        onPointerOut={() => onHover(false)}
+      >
+        {/* A new material when fading changes: three.js doesn't pick up a change to `transparent` on its own. */}
+        <meshStandardMaterial
+          key={faded ? 'faded' : 'solid'}
+          color={colour} roughness={0.75} transparent={faded} opacity={faded ? 0.07 : 1} depthWrite={!faded}
+          emissive={picked ? PICKED_COLOUR : '#000000'} emissiveIntensity={picked ? 0.45 : 0}
+        />
       </mesh>
-      <lineSegments geometry={CUBE_EDGES}>
-        <lineBasicMaterial color="#24272a" transparent opacity={faded ? 0.08 : 0.35} />
+      {/* The picked part's outline shows through whatever is in front of it. */}
+      <lineSegments geometry={CUBE_EDGES} renderOrder={picked ? 10 : 0}>
+        <lineBasicMaterial
+          key={picked ? 'picked' : 'plain'}
+          color={picked ? PICKED_COLOUR : '#24272a'} transparent opacity={picked ? 1 : faded ? 0.05 : 0.35} depthTest={!picked}
+        />
       </lineSegments>
     </group>
   )

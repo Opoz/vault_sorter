@@ -443,3 +443,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .scene3d-spread input { width: min(14rem, 40vw); }
 .scene3d-note { position: absolute; left: 0.75rem; top: 0.75rem; margin: 0; max-width: 18rem; font-size: 0.8rem; color: var(--ink-soft); }
 .scene3d-loading { margin: auto; color: var(--ink-soft); }
+
+/* The part picked in the 3D view: its name over the view, and its line in the parts list. */
+.scene3d-picked { position: absolute; left: 50%; top: 0.75rem; transform: translateX(-50%); margin: 0; padding: 0.3rem 0.8rem; border-radius: 999px; background: var(--select); color: #fff; font-size: 0.85rem; pointer-events: none; }
+.parts tr.is-marked td { background: rgb(47 111 235 / 0.12); }
+.parts tr.is-marked td:first-child { box-shadow: inset 3px 0 0 var(--select); }
+.picked-part { margin: 0 0 1rem; padding: 0.6rem 0.75rem; border-radius: var(--radius-control); background: rgb(47 111 235 / 0.08); box-shadow: inset 3px 0 0 var(--select); }
+.picked-part p { margin: 0; }
+.picked-part .hint { margin-top: 0.25rem; font-size: 0.8rem; color: var(--ink-soft); }
