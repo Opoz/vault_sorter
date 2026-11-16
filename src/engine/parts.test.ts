@@ -276,6 +276,23 @@ describe('partsForTower', () => {
       expect(back({ backbone: 'matching', pegboard: 'skadis' })).toMatchObject({ 'M2F.stl': 3, 'M1F.stl': 1 })
     })
 
+    // With a pull-out handle the lock is the top backbone piece (the user): the backbone covers one floor less, and
+    // the lock carries no pegboard board.
+    it('makes the pull-out handle lock the top backbone piece', () => {
+      const floors = (p: Record<string, number>, one: string, two: string) => (p[one] ?? 0) + 2 * (p[two] ?? 0)
+      const without = back({ backbone: 'matching', pegboard: 'skadis' })
+      const withLock = back({ backbone: 'matching', pegboard: 'skadis', pullOutHandle: true })
+      expect(floors(withLock, 'M1F Backbone.stl', 'M2F Backbone.stl')).toBe(floors(without, 'M1F Backbone.stl', 'M2F Backbone.stl') - 1)
+      expect(floors(withLock, 'M1F.stl', 'M2F.stl')).toBe(floors(without, 'M1F.stl', 'M2F.stl') - 1)
+      expect(withLock['M Pull-out Handle Lock.stl']).toBe(1)
+    })
+
+    // The stationary handle bolts to the topmost backbone piece, which is left blank (the user).
+    it('leaves the stationary handle its own backbone piece, with no pegboard board', () => {
+      const boards = (t: Partial<Tower>) => { const p = back({ backbone: 'matching', pegboard: 'skadis', ...t }); return (p['M2F.stl'] ?? 0) + (p['M1F.stl'] ?? 0) }
+      expect(boards({ stationaryHandle: true })).toBe(boards({}) - 1)
+    })
+
     it('adds a wall mount per unit, matching its size, each with a part for the wall', () => {
       const parts = byFile(partsForTower(tower({
         width: 'L', depth: 3, wallMount: true, rows: [{ height: '1F', units: [drawer('S'), drawer('S')] }, { height: '2F', units: [drawer('L')] }],

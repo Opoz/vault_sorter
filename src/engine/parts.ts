@@ -235,11 +235,19 @@ const BACK_PIECES_FLAG: Flag = {
   source: 'Modifications pp7–11; piece sizes',
 }
 
+/**
+ * The backbone pieces covering each Row, bottom Row first. With a pull-out handle the lock is the top backbone piece
+ * (the user), standing on the top floor, so the top Row's own pieces cover one floor less.
+ */
+export function towerBackPieces(tower: Pick<Tower, 'width' | 'rows' | 'pullOutHandle'>): { height: '1f' | '2f'; qty: number }[][] {
+  return tower.rows.map((row, i) => backPieces(tower.width, rowFloors(row) - (tower.pullOutHandle && i === tower.rows.length - 1 ? 1 : 0)))
+}
+
 // Modifications pp7–11: backbones bolt down the back, bridging neighbouring modules.
 function backboneParts(tower: Tower): Want[] {
   if (tower.backbone === 'none') return []
   const prefix = tower.backbone === 'universal' ? 'universal ' : tower.width.toLowerCase()
-  return tower.rows.flatMap((row): Want[] => backPieces(tower.width, rowFloors(row)).map(({ height, qty }) => ({
+  return towerBackPieces(tower).flatMap((pieces): Want[] => pieces.map(({ height, qty }) => ({
     tidyPath: `${MODS}/backbone/${prefix}${height} backbone.stl`, qty, role: 'body', flags: [BACK_PIECES_FLAG],
   })))
 }
@@ -273,9 +281,14 @@ function backAttachmentParts(tower: Tower): Want[] {
   if (tower.pegboard) {
     const dir = `${MODS}/pegboard attachment/${tower.pegboard === 'skadis' ? 'ikea skadis' : 'ussa'} pegboard`
     const flag: Flag = { kind: 'inferred', note: 'One pegboard board per backbone piece, matching its height (they come in the same 1F and 2F sizes).', source: 'Modifications p15; board sizes' }
-    wants.push(...from(SOURCES.pegboard, tower.rows.flatMap((row) => backPieces(tower.width, rowFloors(row)).map(({ height, qty }): Want => ({
+    // The stationary handle bolts to the topmost backbone piece, which can't also carry a pegboard board, nor can a
+    // pull-out handle's lock (the user).
+    const pieces = towerBackPieces(tower).map((row) => row.map((p) => ({ ...p })))
+    const top = pieces.at(-1)?.at(-1)
+    if (tower.stationaryHandle && top) top.qty -= 1
+    wants.push(...from(SOURCES.pegboard, pieces.flat().filter(({ qty }) => qty > 0).map(({ height, qty }): Want => ({
       tidyPath: `${dir}/${w}${height}.stl`, qty, role: 'body', flags: [flag],
-    })))))
+    }))))
   }
   if (tower.wallMount) {
     const second: Flag = { kind: 'inferred', note: 'One second part on the wall for each wall mount; the manual shows them but gives no count.', source: 'Mounting Instructions pp6–9' }

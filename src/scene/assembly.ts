@@ -140,26 +140,47 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
     const groupSpread: Vec3 = group === 'roof' ? [0, top * UNIT_LIFT + 80, 0] : group === 'bottom' ? [0, -80, 0] : [0, 0, -60]
     placeLine(line, (n) => towerPart(line.path, group === 'roof' ? roofFrame : towerFrame, n, line.qty, roofT, measure, options.catalog), groupSpread, 'tower', parts, options.catalog.get(line.path).outline)
   }
-  // Backbone and pegboard pieces, Row by Row.
+  // Backbone and pegboard pieces, Row by Row. Backbones are stored as seen from behind: the flat, clean face (the
+  // file's −z) faces out, the side with the Module bosses (+z) against the Modules (Modifications p8). Pegboard
+  // attachments cover the backbone pieces of their Row, bottom up, on that outer face.
   tower.rows.forEach((row, ri) => {
     let y = rowBottoms[ri]
-    for (const line of backLines(tower, rowFloors(row), depth, options)) {
+    let pegY = rowBottoms[ri]
+    // With a pull-out handle, its lock is the top backbone piece, on the top floor (the user).
+    const lockFloor = tower.pullOutHandle && ri === tower.rows.length - 1 ? 1 : 0
+    for (const line of backLines(tower, rowFloors(row) - lockFloor, depth, options)) {
       const size = measure(line.path)
       for (let n = 0; n < line.qty; n++) {
         const pegboard = /pegboard/i.test(line.path)
         const [w, h, t] = size
-        const z = -towerD / 2 - (pegboard ? 33 : 0) - t / 2
+        const z = -towerD / 2 - (pegboard ? BACKBONE_T : 0) - t / 2
+        const at = pegboard ? pegY : y
         parts.push({
           key: `tower:${ri}:${line.path}:${n}`, path: line.path, role: line.role,
-          center: [0, y + h / 2, z], size: [w, h, t],
-          groupSpread: [0, (y + h / 2) * UNIT_LIFT, -60], partSpread: [0, 0, pegboard ? -120 : -50], axes: STORED,
+          center: [0, at + h / 2, z], size: [w, h, t],
+          groupSpread: [0, (at + h / 2) * UNIT_LIFT, -60], partSpread: [0, 0, pegboard ? -120 : -50], axes: STORED,
         })
-        if (!pegboard) y += h
+        if (pegboard) pegY += h
+        else y += h
       }
     }
   })
+  // The stationary handle bolts to the back of the topmost backbone piece, centred on it (Modifications p12).
+  const backbones = parts.filter((p) => !p.unitId && /\/backbone\//i.test(p.path) && /backbone\.stl$/i.test(p.path))
+  const topPiece = backbones.reduce<ScenePart | undefined>((a, p) => (!a || p.center[1] > a.center[1] ? p : a), undefined)
+  if (topPiece && tower.stationaryHandle) {
+    for (const [i, p] of parts.entries()) {
+      if (!p.unitId && /stationary handle/i.test(p.path)) parts[i] = { ...p, center: [p.center[0], topPiece.center[1], p.center[2]] }
+    }
+    // That piece is left blank: no pegboard board on it (the user).
+    const board = parts.findIndex((p) => !p.unitId && /pegboard attachment/i.test(p.path) && Math.abs(p.center[1] - topPiece.center[1]) < 1)
+    if (board >= 0) parts.splice(board, 1)
+  }
   return parts
 }
+
+/** How thick a backbone piece is, front to back (measured). */
+const BACKBONE_T = 33
 
 /** How far apart Units spread, per mm of height below them. */
 const UNIT_LIFT = 0.35
@@ -641,13 +662,38 @@ function towerPart(path: string, f: Frame, n: number, qty: number, roofT: number
       spread: [side * (30 + order * 25), -60, 0], axes: (side > 0) !== /disk/.test(file) ? ['+z', '+x', '+y'] : ['-z', '+x', '-y'], checked: BASE_CHECK,
     }
   }
-  if (/stationary handle|pull-out handle\b|pull-out handle$/.test(file)) {
-    const s = measure(path)
-    const [a, b, c] = ranked(s)
-    return { center: [cx, top - b / 2, -f.d / 2 - 33 - c / 2], size: [a, b, c], spread: [0, 40, -80], axes: rankAxes(s) }
+  // Behind the Modules: the backbone's outer face is 33 mm behind them, and the pull-out handle's two M16 rods run up
+  // through the backbone's 17.5 mm holes, 122.8 mm either side of the middle and 16 mm in from its outer face
+  // (measured on L backbones).
+  const backboneOut = -f.d / 2 - BACKBONE_T
+  const rodZ = backboneOut + 16
+  if (/stationary handle/.test(file)) {
+    // Stored as seen from behind, its feet (the file's +z) bolted to the back of a backbone piece from inside, the
+    // grip out behind (Modifications p12); its height is set once the backbone pieces are placed.
+    const [sx, sy, sz] = measure(path)
+    return { center: [cx, top - sy / 2, backboneOut - sz / 2], size: [sx, sy, sz], spread: [0, 40, -80], axes: STORED }
   }
-  if (/handle lock knob/.test(file)) return small(path, [cx + sideOf(n) * 40, top - 60, -f.d / 2 - 40], [sideOf(n) * 20, 0, -110], measure)
-  if (/handle lock/.test(file)) return small(path, [cx + (qty > 1 ? sideOf(n) * 40 : 0), top - 60, -f.d / 2 - 36], [0, 0, -95], measure)
+  if (/pull-out handle lock part 2/.test(file)) return small(path, [cx, top - FLOOR_PITCH_MM / 2, -f.d / 2 - 35 - 8], [0, 30, -100], measure)
+  // The lock is the top backbone piece, 47 mm tall like a 1F one, on the top floor; the rods run from the handle down
+  // through it and the backbone pieces below, and its two knobs screw into its back, 105.3 mm either side of the
+  // middle (the user; measured holes).
+  const lockY = top - FLOOR_PITCH_MM / 2
+  const lockT = 35
+  if (/pull-out handle lock/.test(file)) {
+    const [sx, sy, sz] = measure(path)
+    return { center: [cx, lockY, -f.d / 2 - lockT / 2], size: [sx, sz, sy], spread: [0, 30, -90], axes: ['+x', '+z', '-y'] }
+  }
+  if (/handle lock knob/.test(file)) {
+    const part2 = /part 2/.test(file)
+    const s = measure(path)
+    return { ...small(path, [cx + sideOf(n) * 105.3, lockY, -f.d / 2 - lockT - (part2 ? 20 : 5)], [sideOf(n) * 20, 30, -130], measure), size: ranked(s) }
+  }
+  if (/pull-out handle/.test(file)) {
+    // On top of the telescoping rods, pushed down onto the lock (Modifications p14): stored as seen from behind,
+    // turned a quarter-turn forward so its 61.5 mm stands up (the user).
+    const [sx, sy, sz] = measure(path)
+    return { center: [cx, lockY + 47 / 2 + sz / 2, rodZ], size: [sx, sz, sy], spread: [0, 120, -60], axes: ['+x', '-z', '+y'] }
+  }
   return loose(path, [cx, top, 0], measure)
 }
 
