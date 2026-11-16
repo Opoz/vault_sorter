@@ -329,9 +329,12 @@ function sustainerParts(unit: SustainerUnit, depth: number, height: string, ctx:
   const typed = !small ? ` ${unit.moduleType}` : ''
   const fromPicture: Flag = {
     kind: 'inferred',
-    note: 'Two hinges and two locks per module, counted from the illustration; not stated in text.',
+    note: 'Two hinges per module, counted from the illustration; not stated in text.',
     source: 'Instructions Manual p17',
   }
+  // One lock on an S or M Facade (one lock recess, in the middle), two on L and XL (measured on the facade files;
+  // the user).
+  const locks = small ? 1 : 2
   const hinge = small ? (tall ? 's-m 2-4f hinge' : 's-m 1f hinge') : tall ? 'l 2-4f hinge' : 'l-xl 1f hinge'
   const lockOuter = tall ? 'lock outer part 2-4f' : 'lock outer part 1f'
   return [
@@ -354,12 +357,12 @@ function sustainerParts(unit: SustainerUnit, depth: number, height: string, ctx:
         source: 'Instructions Manual p12; Rods.stl size',
       }],
     },
-    { tidyPath: `${SUSTAINER_UNIVERSAL}/locks/lock holder.stl`, qty: 2, role: 'body', flags: [fromPicture] },
-    { tidyPath: `${SUSTAINER_UNIVERSAL}/locks/lock inner part.stl`, qty: 2, role: 'body', flags: [fromPicture] },
-    { tidyPath: `${SUSTAINER_UNIVERSAL}/locks/${lockOuter}.stl`, qty: 2, role: 'secondary', flags: [fromPicture] },
+    { tidyPath: `${SUSTAINER_UNIVERSAL}/locks/lock holder.stl`, qty: locks, role: 'body', source: 'Instructions Manual p12; the facade files' },
+    { tidyPath: `${SUSTAINER_UNIVERSAL}/locks/lock inner part.stl`, qty: locks, role: 'body', source: 'Instructions Manual p12; the facade files' },
+    { tidyPath: `${SUSTAINER_UNIVERSAL}/locks/${lockOuter}.stl`, qty: locks, role: 'secondary', source: 'Instructions Manual p12; the facade files' },
     {
-      tidyPath: `${SUSTAINER_UNIVERSAL}/locks/1 set of pins for 1 lock.stl`, qty: 2, role: 'body',
-      flags: [fromPicture],
+      tidyPath: `${SUSTAINER_UNIVERSAL}/locks/1 set of pins for 1 lock.stl`, qty: locks, role: 'body',
+      source: 'Instructions Manual p12; the facade files',
     },
     {
       tidyPath: `${SUSTAINER_UNIVERSAL}/label for sustainers.stl`, qty: 1, role: 'body',

@@ -91,7 +91,8 @@ describe('partsForTower', () => {
     const one = (unit: Unit, height: Height, depth: Tower['depth'] = 3, o = opts) =>
       byFile(partsForTower(tower({ width: unit.width, depth, rows: [{ height, units: [unit] }] }), o))
 
-    // Instructions Manual p12 ("Sustainers Naming") and p17 (two hinges, two locks per module).
+    // Instructions Manual p12 ("Sustainers Naming") and p17 (two hinges per module); one lock on an S or M Facade,
+    // which has one lock recess (two on L and XL).
     it('lists every part of a single sustainer', () => {
       expect(one(sustainer('S'), '1F')).toEqual({
         'S3 1F Module.stl': 1,
@@ -100,10 +101,10 @@ describe('partsForTower', () => {
         'S-M 1F Hinge.stl': 2,
         'S Hinge Top.stl': 2,
         'S-M Rods.stl': 1,
-        'LOCK HOLDER.stl': 2,
-        'LOCK INNER PART.stl': 2,
-        'LOCK OUTER PART 1F.stl': 2,
-        '1 SET OF PINS FOR 1 LOCK.stl': 2,
+        'LOCK HOLDER.stl': 1,
+        'LOCK INNER PART.stl': 1,
+        'LOCK OUTER PART 1F.stl': 1,
+        '1 SET OF PINS FOR 1 LOCK.stl': 1,
         'Label for Sustainers.stl': 1,
       })
     })

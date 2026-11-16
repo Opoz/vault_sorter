@@ -194,6 +194,8 @@ const ranked = (s: Vec3) => [...s].sort((a, b) => b - a) as unknown as Vec3
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 /** How far right of a Facade's middle its outer capped bolt hole is, for widths with four bolts (measured). */
 const OUTER_BOLT: Partial<Record<Width, number>> = { M: 92, L: 130, XL: 170 }
+/** Sustainer poses read from the files, matched to the pictures and confirmed by the user (no assembly manual). */
+const SUSTAINER_CHECK = 'Instructions Manual pp12 and 17, with the user'
 /** Widths whose Modules hold two latches. */
 const TWO_LATCHES: ReadonlySet<Width> = new Set(['L', 'XL'])
 
@@ -379,28 +381,44 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       return [rail(0), rail(1)]
     }
   } else {
-    // Sustainers: a Module open at the top, a lid (the Roof file) over it, a Facade on the front, hinges at the
-    // back and locks at the front.
-    const lidT = 6
-    const modH = f.h - lidT
+    // Sustainers: a Module open at the top, a lid (the Roof file) hinged at its back, a Facade on the front, hinges
+    // at the back and locks at the front (Instructions Manual pp12 and 17; there's no assembly manual for them, so
+    // the turns below are read from the files and those two pictures, inferred).
+    // The Module is stored like a drawer's: upside down, its closed back wall on the file's −z, open front on +z.
+    // Module heights are the same at every width and depth (measured on S3, M5 and L4).
+    const moduleH = { '1F': 50.8, '2F': 84.8, '4F': 180.8 }[unit.height]
+    const top = f.y0 + moduleH
     const lidSpread: Vec3 = [0, 70, 0]
-    if (/\bmodule\b/.test(file)) return { center: sitting(cx, f.y0, 0, [f.w, modH, f.d]), size: [f.w, modH, f.d], spread: [0, 0, 0] }
+    const facadeT = 10
+    if (/\bmodule\b/.test(file)) return { center: sitting(cx, f.y0, 0, [f.w, sy, f.d]), size: [f.w, sy, f.d], spread: [0, 0, 0], axes: ['-x', '-y', '+z'], checked: SUSTAINER_CHECK }
     if (/\broof\b/.test(file)) {
+      // The lid stands on end on the bed, turned: its top on the file's +x once squared up, its hollow underside
+      // on −x, the corner bosses for the hinges at the back (−z) and the tab the lock catches at the front (+z).
+      // It reaches over the Facade (198.1 = 188.1 + 10 on S4), its rim on the Module's top edge with the bosses
+      // 8 mm lower. Split lids: Part 1 at the front, Part 2 behind, taken to be stored the same way.
       const h = half(file)
-      const d = h === 0 ? f.d - 4 : (f.d - 4) / 2
-      const z = h * d / 2
-      return { center: sitting(cx, f.y0 + modH, z, [f.w - 4, lidT, d]), size: [f.w - 4, lidT, d], spread: add(lidSpread, [0, 0, h * 15]), axes: along(0, 2, 1) }
+      const lidT = 27.9
+      const z = h === -1 ? -f.d / 2 + sz / 2 : front + facadeT - sz / 2
+      return { center: [cx, top + lidT / 2 - 8, z], size: [f.w, lidT, sz], spread: add(lidSpread, [0, 0, h * 15]), axes: ['-y', '+x', '+z'], ...(h === 0 ? { checked: SUSTAINER_CHECK } : {}) }
     }
-    if (/connector/.test(file)) return small(path, [cx, f.y0 + modH + lidT, 0], add(lidSpread, [0, 25, 0]), measure)
+    if (/connector/.test(file)) return small(path, [cx, top + 20, 0], add(lidSpread, [0, 25, 0]), measure)
+    // The Facade is stored face up (+z) and upside down, like a drawer's: its lock recess and the notch for the
+    // lock's hook are at the file's −y end, which is the top. It's set flush with the Module's top.
+    const facadeTop = top
     if (/facade/.test(file)) {
-      return { center: [cx, f.y0 + modH / 2, front + sz / 2], size: [sx, sy, sz], spread: [0, 0, 45] }
+      return { center: [cx, facadeTop - sy / 2, front + sz / 2], size: [sx, sy, sz], spread: [0, 0, 45], axes: ['-x', '-y', '+z'], checked: SUSTAINER_CHECK }
     }
-    if (/label/.test(file)) return flat(path, [cx, f.y0 + modH / 2, front + sz + 11], [0, 0, 80], measure)
+    if (/label/.test(file)) {
+      // In the Facade's 2 mm recess, 24.9 mm in from its left end: at the top of a 1F Facade, below the lock on
+      // taller ones (measured on S1F, S2F and S4F).
+      const down = { '1F': 10, '2F': 44, '4F': 48 }[unit.height]
+      return { ...flat(path, [cx - (f.w / 2 - 24.9), facadeTop - down, front + facadeT - 1], [0, 0, 80], measure), axes: ['-x', '-y', '+z'], checked: SUSTAINER_CHECK }
+    }
     if (/hinge top/.test(file)) return small(path, [cx + sideOf(n) * f.w / 4, f.y0 + f.h + 6, -front + 10], add(lidSpread, [0, 30, -40]), measure)
-    if (/hinge/.test(file)) return small(path, [cx + sideOf(n) * f.w / 4, f.y0 + modH - 10, -front - 10], [0, 20, -45], measure)
-    if (/rods/.test(file)) return small(path, [cx, f.y0 + modH - 10, -front - 18], [0, 40, -70], measure)
+    if (/hinge/.test(file)) return small(path, [cx + sideOf(n) * f.w / 4, f.y0 + moduleH - 10, -front - 10], [0, 20, -45], measure)
+    if (/rods/.test(file)) return small(path, [cx, f.y0 + moduleH - 10, -front - 18], [0, 40, -70], measure)
     const lockX = cx + sideOf(n) * (f.w / 2 - 28)
-    const lockY = f.y0 + modH - 20
+    const lockY = f.y0 + moduleH - 20
     if (/lock holder/.test(file)) return small(path, [lockX, lockY, front + 4], [0, 0, 30], measure)
     if (/lock inner/.test(file)) return small(path, [lockX, lockY, front + 12], [0, 0, 55], measure)
     if (/lock outer/.test(file)) return small(path, [lockX, lockY, front + 20], [0, 0, 80], measure)
