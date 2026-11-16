@@ -13,8 +13,11 @@ export interface EditorDrawer extends DrawerUnit { readonly id: string }
 export interface EditorSustainer extends SustainerUnit { readonly id: string }
 export type EditorUnit = EditorDrawer | EditorSustainer
 
-/** A Unit as placed: with its own Height (GLOSSARY: Column). */
-export type EditorStackedUnit = EditorUnit & { readonly height: Height }
+/**
+ * A Unit as placed: with its own Height (GLOSSARY: Column), and any Empty space left under it while planning.
+ * A Tower with Empty space isn't finished, so it never reaches the engine.
+ */
+export type EditorStackedUnit = EditorUnit & { readonly height: Height; readonly gapBelow?: number }
 
 /** One side of a Row: Units of one Width stacked bottom first. A full-width Row is a single Column. */
 export interface EditorColumn {
@@ -27,9 +30,46 @@ export interface EditorColumn {
 export interface EditorRow {
   readonly id: string
   readonly columns: readonly EditorColumn[]
+  /** A narrow Column on its own sits on the left unless this says right. */
+  readonly soloSide?: 'right'
 }
 
-export const columnFloors = (column: EditorColumn) => column.units.reduce((n, u) => n + FLOORS[u.height], 0)
+const unitFloors = (u: EditorStackedUnit) => (u.gapBelow ?? 0) + FLOORS[u.height]
+/** How high a Column reaches, in floors, counting Empty space under its Units. */
+export const columnFloors = (column: EditorColumn) => column.units.reduce((n, u) => n + unitFloors(u), 0)
+
+/** The floor each Unit of a Column starts on (0 is the bottom of the Row). */
+export function unitStarts(units: readonly EditorStackedUnit[]): number[] {
+  let floor = 0
+  return units.map((u) => { const start = floor + (u.gapBelow ?? 0); floor = start + FLOORS[u.height]; return start })
+}
+
+/** Put a Unit into a Column with its bottom on a given floor, pushing Units above up only as far as they must go. */
+function placeAtFloor(units: readonly EditorStackedUnit[], unit: EditorStackedUnit, floor: number): EditorStackedUnit[] {
+  const starts = unitStarts(units)
+  const at = starts.findIndex((s) => s >= floor)
+  const order = [...units.map((u, i) => ({ u, start: starts[i] }))]
+  order.splice(at < 0 ? order.length : at, 0, { u: unit, start: Math.max(0, floor) })
+  let top = 0
+  return order.map(({ u, start }) => {
+    const from = Math.max(start, top)
+    const gap = from - top
+    top = from + FLOORS[u.height]
+    const { gapBelow: _old, ...rest } = u
+    return (gap > 0 ? { ...rest, gapBelow: gap } : rest) as EditorStackedUnit
+  })
+}
+
+/** Take a Unit out of a Column; the Units above drop by its height (its Empty space stays, under the next one). */
+function takeOut(units: readonly EditorStackedUnit[], unitId: string): EditorStackedUnit[] {
+  const i = units.findIndex((u) => u.id === unitId)
+  if (i < 0) return [...units]
+  const gone = units[i].gapBelow ?? 0
+  const rest = units.filter((_, j) => j !== i)
+  if (gone && rest[i]) rest[i] = { ...rest[i], gapBelow: (rest[i].gapBelow ?? 0) + gone }
+  return rest
+}
+
 /** A Row's height in floors: its tallest Column (a finished Row's Columns are equal). */
 export const rowFloors = (row: EditorRow) => Math.max(0, ...row.columns.map(columnFloors))
 /** Every Unit in a Row, Column by Column, bottom first. */
@@ -98,10 +138,16 @@ export interface UnitSpec {
 
 export type DropTarget =
   | { readonly kind: 'newRow'; readonly index: number }
-  /** Start the second Column of a Row. */
-  | { readonly kind: 'beside'; readonly rowId: string }
-  /** Into a Column's stack: at `index` (0 is the bottom), or on top when it's left out. */
-  | { readonly kind: 'onColumn'; readonly rowId: string; readonly columnId: string; readonly index?: number }
+  /**
+   * Start the other Column of a Row: on `side` (by default, wherever the Row's lone Column isn't), with its bottom
+   * on `floor` (default 0), leaving Empty space under it.
+   */
+  | { readonly kind: 'beside'; readonly rowId: string; readonly side?: 'left' | 'right'; readonly floor?: number }
+  /**
+   * Into a Column's stack: just under the Unit at `index` (0 is the bottom), or with its bottom on `floor` (Empty
+   * space under it if that's above the stack), or on top when both are left out.
+   */
+  | { readonly kind: 'onColumn'; readonly rowId: string; readonly columnId: string; readonly index?: number; readonly floor?: number }
 
 export type OpResult = { readonly ok: true; readonly layout: EditorLayout } | { readonly ok: false; readonly reason: string }
 
@@ -183,10 +229,13 @@ function placeExisting(
     if (!row) return 'That row no longer exists'
     const widths = row.columns.map((c) => c.width)
     if (target.kind === 'beside') {
-      if (isFull(width, widths)) return 'That row is already full'
-      if (!canStart(width, [...widths, unit.width])) return `There's no room for an ${unit.width} unit in that row`
-      const column: EditorColumn = { id: newId(), width: unit.width, units: [placed] }
-      return { ...tower, rows: tower.rows.map((r) => (r.id === row.id ? { ...r, columns: [...r.columns, column] } : r)) }
+      if (row.columns.length !== 1 || isFull(width, widths)) return 'That row is already full'
+      const side = target.side ?? (row.soloSide === 'right' ? 'left' : 'right')
+      const order = side === 'left' ? [unit.width, widths[0]] : [widths[0], unit.width]
+      if (!isFull(width, order)) return `There's no room for an ${unit.width} unit in that row`
+      const column: EditorColumn = { id: newId(), width: unit.width, units: placeAtFloor([], placed, target.floor ?? 0) }
+      const columns = side === 'left' ? [column, row.columns[0]] : [row.columns[0], column]
+      return { ...tower, rows: tower.rows.map((r) => (r.id === row.id ? { id: r.id, columns } : r)) }
     }
     const column = row.columns.find((c) => c.id === target.columnId)
     if (!column) return 'That column no longer exists'
@@ -194,26 +243,32 @@ function placeExisting(
     return {
       ...tower,
       rows: tower.rows.map((r) => (r.id !== row.id ? r : {
-        ...r, columns: r.columns.map((c) => (c.id === column.id ? { ...c, units: insertAt(c.units, target.index, placed) } : c)),
+        ...r, columns: r.columns.map((c) => (c.id === column.id ? { ...c, units: intoColumn(c.units, placed, target) } : c)),
       })),
     }
   })
 }
 
-function insertAt<T>(items: readonly T[], index: number | undefined, item: T): T[] {
-  const at = index === undefined ? items.length : Math.max(0, Math.min(index, items.length))
-  return [...items.slice(0, at), item, ...items.slice(at)]
+/** Where an onColumn drop puts a Unit: under the Unit at `index`, on `floor`, or on top. */
+function intoColumn(units: readonly EditorStackedUnit[], unit: EditorStackedUnit, target: { index?: number; floor?: number }) {
+  if (target.floor !== undefined) return placeAtFloor(units, unit, target.floor)
+  if (target.index !== undefined && target.index < units.length) return placeAtFloor(units, unit, unitStarts(units)[Math.max(0, target.index)])
+  return [...units, unit]
+}
+
+/** A Row without a Unit. An emptied Column goes; if that was the left one, the other stays on the right. */
+const withoutUnit = (unitId: string) => (row: EditorRow): EditorRow => {
+  const columns = row.columns.map((c) => ({ ...c, units: takeOut(c.units, unitId) }))
+  const kept = columns.filter((c) => c.units.length > 0)
+  if (kept.length === columns.length) return { ...row, columns }
+  const soloSide = row.columns.length === 2 ? (columns[0].units.length === 0 ? 'right' : undefined) : row.soloSide
+  return soloSide ? { id: row.id, columns: kept, soloSide } : { id: row.id, columns: kept }
 }
 
 /** Take a Unit out. Its Column and Row go when they empty; an emptied Tower forgets its Width. */
 export function removeUnit(layout: EditorLayout, towerId: string, unitId: string): OpResult {
   return withTower(layout, towerId, (tower) => {
-    const rows = tower.rows
-      .map((r) => ({
-        ...r,
-        columns: r.columns.map((c) => ({ ...c, units: c.units.filter((u) => u.id !== unitId) })).filter((c) => c.units.length > 0),
-      }))
-      .filter((r) => r.columns.length > 0)
+    const rows = tower.rows.map(withoutUnit(unitId)).filter((r) => r.columns.length > 0)
     return { ...tower, rows, width: rows.length ? tower.width : null, depth: rows.length ? tower.depth : null }
   })
 }
@@ -256,9 +311,10 @@ export function duplicateColumn(layout: EditorLayout, towerId: string, rowId: st
     if (!row || !column) return 'That column no longer exists'
     const width = tower.width ?? column.width
     const widths = row.columns.map((c) => c.width)
-    if (isFull(width, widths) || !canStart(width, [...widths, column.width])) return `There's no room for another ${column.width} column in that row`
+    if (row.columns.length !== 1 || !isFull(width, [...widths, column.width])) return `There's no room for another ${column.width} column in that row`
     const copy: EditorColumn = { id: newId(), width: column.width, units: column.units.map((u) => ({ ...u, id: newId() })) }
-    return { ...tower, rows: tower.rows.map((r) => (r.id === row.id ? { ...r, columns: [...r.columns, copy] } : r)) }
+    const columns = row.soloSide === 'right' ? [copy, column] : [column, copy]
+    return { ...tower, rows: tower.rows.map((r) => (r.id === row.id ? { id: r.id, columns } : r)) }
   })
 }
 
@@ -270,12 +326,31 @@ export function moveUnit(
   const found = from && findUnit(from, unitId)
   if (!from || !found) return refuse('That unit no longer exists')
   const { row, rowIndex, column, unit } = found
-  if (target.kind === 'beside' && target.rowId === row.id && row.columns.length === 1) return done(layout)
-  if (target.kind === 'onColumn' && target.columnId === column.id) {
+  // Within its own Column: rearrange the Column in place (it mustn't vanish when this was its only Unit).
+  if (fromTowerId === toTowerId && target.kind === 'onColumn' && target.columnId === column.id) {
     const from = column.units.findIndex((u) => u.id === unitId)
     const to = target.index ?? column.units.length
-    // Dropped just above or below itself: nothing moves.
-    if (to === from || to === from + 1) return done(layout)
+    // Dropped on a join just above or below itself: nothing moves.
+    if (target.floor === undefined && (to === from || to === from + 1)) return done(layout)
+    const rest = takeOut(column.units, unitId)
+    // Joins were counted before the move: those above it shift down one.
+    const index = target.index !== undefined && target.index > from ? target.index - 1 : target.index
+    const units = intoColumn(rest, unit, { index, floor: target.floor })
+    return withTower(layout, toTowerId, (tower) => ({
+      ...tower,
+      rows: tower.rows.map((r) => (r.id !== row.id ? r : { ...r, columns: r.columns.map((c) => (c.id === column.id ? { ...c, units } : c)) })),
+    }))
+  }
+  // A lone Unit in a lone Column dropped on the Row's other side: the Column moves across.
+  if (fromTowerId === toTowerId && target.kind === 'beside' && target.rowId === row.id && row.columns.length === 1 && column.units.length === 1) {
+    const side = target.side ?? (row.soloSide === 'right' ? 'left' : 'right')
+    const units = placeAtFloor([], unit, target.floor ?? 0)
+    return withTower(layout, toTowerId, (tower) => ({
+      ...tower,
+      rows: tower.rows.map((r) => (r.id !== row.id ? r : side === 'right'
+        ? { id: r.id, columns: [{ ...column, units }], soloSide: 'right' as const }
+        : { id: r.id, columns: [{ ...column, units }] })),
+    }))
   }
   const removed = removeUnit(layout, fromTowerId, unitId)
   if (!removed.ok) return removed
@@ -284,12 +359,7 @@ export function moveUnit(
   if (target.kind === 'newRow' && fromTowerId === toTowerId && rowUnits(row).length === 1 && rowIndex < target.index) {
     adjusted = { kind: 'newRow', index: target.index - 1 }
   }
-  // Moving up its own column: the units above it shift down one when it's taken out.
-  if (target.kind === 'onColumn' && target.columnId === column.id && target.index !== undefined
-    && column.units.findIndex((u) => u.id === unitId) < target.index) {
-    adjusted = { ...target, index: target.index - 1 }
-  }
-  const { id, height, ...settings } = unit
+  const { id, height, gapBelow: _gap, ...settings } = unit
   return placeExisting(removed.layout, toTowerId, adjusted, { ...settings, id } as EditorUnit, height)
 }
 
@@ -387,9 +457,17 @@ export function rowProblems(tower: EditorTower): { rowIndex: number; problem: st
   return tower.rows.flatMap((row, rowIndex) => {
     const widths = row.columns.map((c) => c.width)
     if (!isFull(width, widths)) {
-      const missing = ROW_FILLS[width].find((f) => f.length > widths.length && startsWith(f, widths))
-      const next = missing?.[widths.length]
+      const right = row.soloSide === 'right'
+      const fill = ROW_FILLS[width].find((f) => f.length === 2 && f[right ? 1 : 0] === widths[0])
+      const next = fill && widths.length === 1 ? fill[right ? 0 : 1] : undefined
       return [{ rowIndex, problem: next ? `Needs another ${next} unit to fill the ${width} width` : 'Does not fit this tower' }]
+    }
+    const sideOf = (ci: number) => (row.columns.length === 2 ? (ci === 0 ? 'left' : 'right') : 'a')
+    for (const [ci, column] of row.columns.entries()) {
+      const floating = column.units.find((u) => (u.gapBelow ?? 0) > 0)
+      if (floating) {
+        return [{ rowIndex, problem: `The ${sideOf(ci)} column has ${floating.gapBelow}F of empty space under its ${floating.width} ${floating.kind}` }]
+      }
     }
     const short = columnShortfall(row)
     const i = short.findIndex((n) => n > 0)
@@ -405,7 +483,7 @@ export function toEngineTower(tower: EditorTower, depth: Depth): Tower | null {
   return {
     width: tower.width,
     depth,
-    rows: tower.rows.map((r) => ({ columns: r.columns.map((c) => ({ width: c.width, units: c.units })) })),
+    rows: tower.rows.map((r) => ({ columns: r.columns.map((c) => ({ width: c.width, units: c.units.map(({ gapBelow: _gap, ...u }) => u) })) })),
     roof: tower.roof,
     bottom: tower.bottom,
     backbone: tower.backbone,

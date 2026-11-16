@@ -20,6 +20,10 @@ _Avoid_: Floor (a Height measure), level, layer, shelf
 One side of a split Row: a stack of Units of one Width, any mix of Heights, drawers or sustainers. Modules only connect at their top, so the two Columns of a Row need only reach the same total height (e.g. S4F + S1F beside S2F + S1F + S2F, both 5F); their joins needn't line up.
 _Avoid_: Stack (a Tower is the stack), side
 
+**Empty space**:
+Floors left open under a Unit in a Column while planning, so a Unit can be placed higher up before what goes beneath it is chosen. A Tower with Empty space isn't finished: it can't be printed until the space is filled.
+_Avoid_: Gap (the drop zones between Rows), hole
+
 **Unit**:
 One Module plus every part needed to make it work (its Box, Facade, runners and latch for a Drawer; its lid, hinges and locks for a Sustainer). A Tower is made of Units.
 _Avoid_: Module (when the whole assembly is meant), slot

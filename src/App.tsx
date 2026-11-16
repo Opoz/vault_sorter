@@ -93,8 +93,8 @@ type DragData =
   | { type: 'unit'; towerId: string; unitId: string; spec: UnitSpec }
 type DropData =
   | { type: 'gap'; towerId: string; index: number }
-  | { type: 'slot'; towerId: string; rowId: string }
-  | { type: 'column'; towerId: string; rowId: string; columnId: string; index?: number }
+  | { type: 'slot'; towerId: string; rowId: string; side?: 'left' | 'right'; floor?: number }
+  | { type: 'column'; towerId: string; rowId: string; columnId: string; index?: number; floor?: number }
   | { type: 'newTower'; useEmptyTower?: boolean }
   | { type: 'trash' }
 
@@ -172,8 +172,8 @@ export default function App() {
     } else {
       towerId = drop.towerId
       target = drop.type === 'gap' ? { kind: 'newRow', index: drop.index }
-        : drop.type === 'column' ? { kind: 'onColumn', rowId: drop.rowId, columnId: drop.columnId, index: drop.index }
-        : { kind: 'beside', rowId: drop.rowId }
+        : drop.type === 'column' ? { kind: 'onColumn', rowId: drop.rowId, columnId: drop.columnId, index: drop.index, floor: drop.floor }
+        : { kind: 'beside', rowId: drop.rowId, side: drop.side, floor: drop.floor }
     }
     const result = drag.type === 'palette'
       ? placeUnit(base, towerId, target, drag.spec)

@@ -2,7 +2,7 @@ import { useDraggable, useDroppable } from '@dnd-kit/core'
 import type { CSSProperties, ReactNode } from 'react'
 import type { Depth } from '../engine/model'
 import {
-  columnShortfall, missingWidth, rowFloors, rowProblems, type Colours, type EditorColumn, type EditorRow, type EditorTower,
+  columnFloors, columnShortfall, missingWidth, rowFloors, rowProblems, unitStarts, type Colours, type EditorColumn, type EditorRow, type EditorTower,
   type EditorUnit,
 } from '../editor/layoutOps'
 import type { Width } from '../engine/model'
@@ -221,7 +221,7 @@ function RowView(props: {
   const short = columnShortfall(row)
   const missing = row.columns.length === 1 && problem !== undefined
   return (
-    <div className={`tower-row${problem ? ' is-incomplete' : ''}`} style={{ height: rowPx }}>
+    <div className={`tower-row${problem ? ' is-incomplete' : ''}${missing && row.soloSide === 'right' ? ' is-solo-right' : ''}`} style={{ height: rowPx }}>
       {row.columns.map((column, ci) => (
         <ColumnView
           key={column.id}
@@ -248,7 +248,10 @@ function RowView(props: {
         // shows on hover and is read out.
         const roomy = rowPx >= 64
         return (
-          <Slot towerId={towerId} rowId={row.id} widthPx={Math.max(towerWidthPx - usedPx, 24)} active={dragging} title={problem}>
+          <Slot
+            towerId={towerId} rowId={row.id} widthPx={Math.max(towerWidthPx - usedPx, 24)} active={dragging} title={problem}
+            side={row.soloSide === 'right' ? 'left' : 'right'} floors={rowFloors(row)} scale={scale}
+          >
             <span className={roomy || !copyable || dragging ? 'slot-text' : 'sr-only'}>{problem}</span>
             {copyable && !dragging && (() => {
               const one = copyable.units.length === 1 ? copyable.units[0] : undefined
@@ -294,26 +297,38 @@ function ColumnView(props: {
   blocked?: ReadonlyMap<string, string>
 }) {
   const { towerId, rowId, column, shortFloors, split, colours, scale, selection, dragging, stackable, onSelect, fillWith, onCopyOnto, blocked } = props
+  const starts = unitStarts(column.units)
   return (
     <div className="tower-column" style={{ width: WIDTH_MM[column.width] * scale }}>
-      {column.units.map((unit, i) => (
+      {column.units.map((unit, i) => [
+        (unit.gapBelow ?? 0) > 0 && (
+          <EmptySpace
+            key={`gap-${unit.id}`}
+            towerId={towerId} rowId={rowId} columnId={column.id}
+            from={starts[i] - unit.gapBelow!} floors={unit.gapBelow!} scale={scale}
+            trimPx={i === 0 ? 0 : STACK_GAP_PX} active={dragging}
+          />
+        ),
         <PlacedUnit
           key={unit.id}
           towerId={towerId}
           unit={unit}
           // Every unit above the bottom one gives up the 2 px gap below it, so a column is exactly its floors
           // high however it's split; otherwise stacks of many units drift out of line with their neighbours.
-          trimPx={i === 0 ? 0 : STACK_GAP_PX}
+          trimPx={i === 0 && !unit.gapBelow ? 0 : STACK_GAP_PX}
           blockedBy={blocked?.get(unit.id)}
           height={unit.height}
           colours={colours}
           scale={scale}
           selected={selection?.type === 'unit' && selection.unitId === unit.id}
           onSelect={onSelect}
-        />
-      ))}
+        />,
+      ])}
       {shortFloors > 0 && (
-        <ColumnSlot towerId={towerId} rowId={rowId} columnId={column.id} heightPx={shortFloors * FLOOR_MM * scale - STACK_GAP_PX} active={dragging}>
+        <ColumnSlot
+          towerId={towerId} rowId={rowId} columnId={column.id} heightPx={shortFloors * FLOOR_MM * scale - STACK_GAP_PX} active={dragging}
+          from={columnFloors(column)} floors={shortFloors} scale={scale}
+        >
           <span className={shortFloors * FLOOR_MM * scale >= 44 || !fillWith || dragging ? 'slot-text' : 'sr-only'}>Needs {shortFloors}F</span>
           {fillWith && !dragging && (
             <button
@@ -335,7 +350,7 @@ function ColumnView(props: {
           rowId={rowId}
           columnId={column.id}
           index={i + 1}
-          bottomPx={column.units.slice(0, i + 1).reduce((sum, u) => sum + FLOORS_OF[u.height], 0) * FLOOR_MM * scale}
+          bottomPx={starts[i + 1] * FLOOR_MM * scale}
         />
       ))}
     </div>
@@ -348,13 +363,28 @@ const rowUnitsOfWidth = (row: EditorRow, width: Width) => row.columns.flatMap((c
 const STACK_GAP_PX = 2
 
 /** The empty top of a short Column: drop a unit here to stack it. */
-function ColumnSlot({ towerId, rowId, columnId, heightPx, active, children }: {
-  towerId: string; rowId: string; columnId: string; heightPx: number; active: boolean; children: ReactNode
+function ColumnSlot({ towerId, rowId, columnId, heightPx, active, from, floors, scale, children }: {
+  towerId: string; rowId: string; columnId: string; heightPx: number; active: boolean
+  from: number; floors: number; scale: number; children: ReactNode
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `colslot:${columnId}`, data: { type: 'column', towerId, rowId, columnId } })
   return (
-    <div ref={setNodeRef} className={`slot column-slot${active ? ' is-active' : ''}${isOver ? ' is-over' : ''}`} style={{ height: heightPx }} title="Drop a unit here to stack it">
+    <div className={`slot column-slot${active ? ' is-active' : ''}`} style={{ height: heightPx }} title="Drop a unit here to stack it, on any floor">
       {children}
+      <FloorCells idPrefix={`colslot:${columnId}`} from={from} count={floors} scale={scale}
+        data={(floor) => ({ type: 'column', towerId, rowId, columnId, floor })} />
+    </div>
+  )
+}
+
+/** Empty space under a unit, left while planning: drop a unit on one of its floors to fill it. */
+function EmptySpace({ towerId, rowId, columnId, from, floors, scale, trimPx, active }: {
+  towerId: string; rowId: string; columnId: string; from: number; floors: number; scale: number; trimPx: number; active: boolean
+}) {
+  return (
+    <div className={`slot column-slot empty-space${active ? ' is-active' : ''}`} style={{ height: floors * FLOOR_MM * scale - trimPx }} title={`${floors}F of empty space`}>
+      <span className="slot-text">Empty {floors}F</span>
+      <FloorCells idPrefix={`colslot:${columnId}:gap`} from={from} count={floors} scale={scale}
+        data={(floor) => ({ type: 'column', towerId, rowId, columnId, floor })} />
     </div>
   )
 }
@@ -424,15 +454,37 @@ function Gap({ towerId, index, active, top }: { towerId: string; index: number; 
   )
 }
 
-function Slot({ towerId, rowId, widthPx, active, title, children }: {
-  towerId: string; rowId: string; widthPx: number; active: boolean; title?: string; children: ReactNode
+/** The empty side of a Row: drop on a floor of it to start the other Column there (higher floors leave Empty space). */
+function Slot({ towerId, rowId, widthPx, active, title, side, floors, scale, children }: {
+  towerId: string; rowId: string; widthPx: number; active: boolean; title?: string
+  side: 'left' | 'right'; floors: number; scale: number; children: ReactNode
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `slot:${rowId}`, data: { type: 'slot', towerId, rowId } })
   return (
-    <div ref={setNodeRef} className={`slot${active ? ' is-active' : ''}${isOver ? ' is-over' : ''}`} style={{ width: widthPx }} title={title}>
+    <div className={`slot${active ? ' is-active' : ''}`} style={{ width: widthPx }} title={title}>
       {children}
+      <FloorCells
+        idPrefix={`slot:${rowId}`} from={0} count={floors} scale={scale}
+        data={(floor) => ({ type: 'slot', towerId, rowId, side, floor })}
+      />
     </div>
   )
+}
+
+/**
+ * Drop zones one floor high over an empty area, bottom first, so a unit can be dropped on any floor of it.
+ * They take no clicks: buttons underneath still work.
+ */
+function FloorCells({ idPrefix, from, count, scale, data }: {
+  idPrefix: string; from: number; count: number; scale: number; data: (floor: number) => Record<string, unknown>
+}) {
+  return <>{Array.from({ length: count }, (_, k) => (
+    <FloorCell key={k} id={`${idPrefix}:${from + k}`} bottomPx={k * FLOOR_MM * scale} heightPx={FLOOR_MM * scale} data={data(from + k)} />
+  ))}</>
+}
+
+function FloorCell({ id, bottomPx, heightPx, data }: { id: string; bottomPx: number; heightPx: number; data: Record<string, unknown> }) {
+  const { setNodeRef, isOver } = useDroppable({ id, data })
+  return <div ref={setNodeRef} className={`floor-cell${isOver ? ' is-over' : ''}`} style={{ bottom: bottomPx, height: heightPx }} />
 }
 
 function EmptyDrop({ towerId }: { towerId: string }) {

@@ -279,4 +279,76 @@ describe('layout editing', () => {
 
     expect(moved.towers[0].rows[0].columns[0].units.map((u) => u.height)).toEqual(['2F', '1F', '4F'])
   })
+
+  // Reported: a lone S on the right couldn't be moved up a floor to sit over empty space while planning.
+  describe('empty space and sides', () => {
+    /** An L tower whose one row is S 1F + S 1F on the left and S 1F on the right. */
+    function splitRow() {
+      let { layout, towerId } = towerWith(drawer('S', '1F'))
+      layout = ok(setTowerWidth(layout, towerId, 'L'))
+      const row = () => layout.towers[0].rows[0]
+      layout = ok(placeUnit(layout, towerId, { kind: 'onColumn', rowId: row().id, columnId: row().columns[0].id }, drawer('S', '1F')))
+      layout = ok(placeUnit(layout, towerId, { kind: 'beside', rowId: row().id }, drawer('S', '1F')))
+      return { layout, towerId, row }
+    }
+
+    it('moves a unit up its column to float over empty space, and says the row has a gap', () => {
+      const { layout, towerId, row } = splitRow()
+      const right = row().columns[1]
+
+      const moved = ok(moveUnit(layout, towerId, right.units[0].id, towerId, { kind: 'onColumn', rowId: row().id, columnId: right.id, floor: 1 }))
+
+      const column = moved.towers[0].rows[0].columns[1]
+      expect(column.units.map((u) => [u.height, u.gapBelow ?? 0])).toEqual([['1F', 1]])
+      expect(rowProblems(moved.towers[0])[0].problem).toMatch(/right column has 1F of empty space under its S drawer/)
+      expect(toEngineTower(moved.towers[0], 3)).toBeNull()
+    })
+
+    it('fills empty space from below, pushing what sits above up only if it must', () => {
+      const { layout, towerId, row } = splitRow()
+      const right = row().columns[1]
+      let next = ok(moveUnit(layout, towerId, right.units[0].id, towerId, { kind: 'onColumn', rowId: row().id, columnId: right.id, floor: 1 }))
+
+      next = ok(placeUnit(next, towerId, { kind: 'onColumn', rowId: row().id, columnId: right.id, floor: 0 }, drawer('S', '1F')))
+
+      expect(next.towers[0].rows[0].columns[1].units.map((u) => u.gapBelow ?? 0)).toEqual([0, 0])
+      expect(rowProblems(next.towers[0])).toEqual([])
+    })
+
+    it('moves a lone column to the other side of its row', () => {
+      let { layout, towerId } = towerWith(drawer('S', '1F'))
+      layout = ok(setTowerWidth(layout, towerId, 'L'))
+      const row = layout.towers[0].rows[0]
+
+      const moved = ok(moveUnit(layout, towerId, row.columns[0].units[0].id, towerId, { kind: 'beside', rowId: row.id, side: 'right' }))
+      expect(moved.towers[0].rows[0].soloSide).toBe('right')
+
+      // The next unit dropped beside it goes on the left.
+      const filled = ok(placeUnit(moved, towerId, { kind: 'beside', rowId: row.id }, drawer('S', '2F')))
+      expect(filled.towers[0].rows[0].columns.map((c) => c.units[0].height)).toEqual(['2F', '1F'])
+      expect(filled.towers[0].rows[0].soloSide).toBeUndefined()
+    })
+
+    it('moves one unit of a lone stack across, starting the other column', () => {
+      let { layout, towerId } = towerWith(drawer('S', '1F'))
+      layout = ok(setTowerWidth(layout, towerId, 'L'))
+      const row = layout.towers[0].rows[0]
+      layout = ok(placeUnit(layout, towerId, { kind: 'onColumn', rowId: row.id, columnId: row.columns[0].id }, drawer('S', '2F')))
+      const top = layout.towers[0].rows[0].columns[0].units[1]
+
+      const moved = ok(moveUnit(layout, towerId, top.id, towerId, { kind: 'beside', rowId: row.id }))
+
+      expect(moved.towers[0].rows[0].columns.map((c) => c.units.map((u) => u.height))).toEqual([['1F'], ['2F']])
+    })
+
+    it('keeps the right column where it is when the left one is removed', () => {
+      const { layout, towerId, row } = splitRow()
+      const left = row().columns[0]
+      let next = ok(removeUnit(layout, towerId, left.units[0].id))
+      next = ok(removeUnit(next, towerId, left.units[1].id))
+
+      expect(next.towers[0].rows[0].columns).toHaveLength(1)
+      expect(next.towers[0].rows[0].soloSide).toBe('right')
+    })
+  })
 })

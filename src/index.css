@@ -420,3 +420,12 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .reprint-one { display: block; margin-top: 0.2rem; font-size: 0.75rem; white-space: nowrap; }
 .reprint { border: 1px solid var(--select); border-radius: 6px; padding: 0.5rem 0.6rem; margin: 0.5rem 0; background: rgb(47 111 235 / 0.06); }
 .reprint p { margin: 0 0 0.4rem; }
+
+/* Floor-high drop zones over empty areas (placed from script); they take no clicks. */
+.slot, .column-slot { position: relative; }
+.floor-cell { position: absolute; left: 0; right: 0; pointer-events: none; border-radius: var(--unit-radius); }
+.floor-cell.is-over { background: rgb(47 111 235 / 0.25); outline: 2px solid var(--select); outline-offset: -2px; }
+/* Empty space left under a unit while planning. */
+.empty-space { background: repeating-linear-gradient(45deg, transparent 0 6px, rgb(183 121 31 / 0.12) 6px 12px); }
+/* A lone Column on the right: its empty slot comes first. */
+.tower-row.is-solo-right { flex-direction: row-reverse; justify-content: flex-end; }
