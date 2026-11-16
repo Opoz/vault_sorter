@@ -8,7 +8,7 @@
  * Every placement here is inferred from the part sizes and the manuals' pictures, not measured on an assembly:
  * see POSE_SOURCE.
  */
-import type { Catalog } from '../engine/catalog'
+import type { Catalog, Point } from '../engine/catalog'
 import { MODULE_WIDTH_MM, moduleDepthMm, FLOOR_PITCH_MM, minAreaRect } from '../engine/dimensions'
 import type { Depth, Height, Width } from '../engine/model'
 import { partsForTower, type ColourRole, type PartLine, type PartsOptions } from '../engine/parts'
@@ -40,6 +40,11 @@ export interface ScenePart {
   readonly checked?: string
   /** Which loose piece of the file this is, for files holding several (a pair of springs); absent for the whole file. */
   readonly piece?: number
+  /**
+   * For a file stored turned on the bed (most roofs, the L and XL modules): degrees about the file's z that square
+   * it up, applied before `axes`. Absent for files stored square.
+   */
+  readonly planDeg?: number
 }
 
 /** A file axis and its direction. */
@@ -105,7 +110,7 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
         const sideways = row.columns.length > 1 || MODULE_WIDTH_MM[column.width] < towerW ? (frame.x0 + frame.w / 2 < 0 ? -40 : 40) : 0
         const groupSpread: Vec3 = [sideways, frame.y0 * UNIT_LIFT, 0]
         for (const line of unitLines(tower, unit, depth, options)) {
-          placeLine(line, (n) => unitPart(line.path, frame, n, unit, measure), groupSpread, unit.id, parts, unit.id)
+          placeLine(line, (n) => unitPart(line.path, frame, n, unit, measure), groupSpread, unit.id, parts, options.catalog.get(line.path).outline, unit.id)
         }
       })
     })
@@ -121,7 +126,7 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
   for (const line of lines) {
     const group = towerGroup(line.path)
     const groupSpread: Vec3 = group === 'roof' ? [0, top * UNIT_LIFT + 80, 0] : group === 'bottom' ? [0, -80, 0] : [0, 0, -60]
-    placeLine(line, (n) => towerPart(line.path, towerFrame, n, line.qty, roofT, measure, options.catalog), groupSpread, 'tower', parts)
+    placeLine(line, (n) => towerPart(line.path, towerFrame, n, line.qty, roofT, measure, options.catalog), groupSpread, 'tower', parts, options.catalog.get(line.path).outline)
   }
   // Backbone and pegboard pieces, Row by Row.
   tower.rows.forEach((row, ri) => {
@@ -161,7 +166,9 @@ function columnSides(towerWidth: Width, widths: readonly Width[], soloSide?: 'ri
   return widths.map((_, i) => left + widths.slice(0, i).reduce((s, w) => s + MODULE_WIDTH_MM[w], 0))
 }
 
-function placeLine(line: PartLine, place: (n: number) => Placement | Placement[], groupSpread: Vec3, owner: string, out: ScenePart[], unitId?: string) {
+function placeLine(
+  line: PartLine, place: (n: number) => Placement | Placement[], groupSpread: Vec3, owner: string, out: ScenePart[], outline: readonly Point[], unitId?: string,
+) {
   for (let n = 0; n < line.qty; n++) {
     const placed = place(n)
     // A file holding several loose pieces is placed piece by piece.
@@ -171,6 +178,10 @@ function placeLine(line: PartLine, place: (n: number) => Placement | Placement[]
       center: p.center, size: p.size, groupSpread, partSpread: p.spread, axes: p.axes ?? STORED,
       ...(p.checked ? { checked: p.checked } : {}),
       ...(Array.isArray(placed) ? { piece: i } : {}),
+      ...(() => {
+        const deg = planTurn(outline, storedFootprint(p.size, p.axes ?? STORED))
+        return deg ? { planDeg: deg } : {}
+      })(),
     }))
   }
 }
@@ -293,16 +304,17 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       }
     }
     if (/runner stopper/.test(file)) {
-      // Pushed into the slot in each side of the Module, 44 mm behind its front, once the Box is in (Drawer
-      // Assembly p8). Taller Modules have a slot per floor; a single Box's stoppers are taken to use the lowest,
-      // level with its runners (inferred).
+      // Pushed into the slot in each side of the Module once the Box is in (Drawer Assembly p8). The slot's centre
+      // is 28.5 mm in front of the Module's middle at every depth and width (measured on S3–S7, M5 and L4).
+      // Taller Modules have a slot per floor; a single Box's stoppers are taken to use the lowest, level with its
+      // runners (inferred).
       // Its length (17.9 mm) runs front to back along the slot, with the file's middle-length side facing into
       // the Module (the user, against Drawer Assembly p8). The right one is the left one turned round.
       const st = measure(path)
       const [a, b, c] = ranked(st)
       const r = rankAxes(st)
       return {
-        center: [cx + sideOf(n) * (f.w / 2 + 1), runnerY, front - 44], size: [b, c, a], spread: [sideOf(n) * 45, 0, 0],
+        center: [cx + sideOf(n) * (f.w / 2 + 1), runnerY, 28.5], size: [b, c, a], spread: [sideOf(n) * 45, 0, 0],
         axes: sideOf(n) < 0 ? [r[1], neg(r[2]), r[0]] : [neg(r[1]), neg(r[2]), neg(r[0])], checked: 'Drawer Assembly p8, step 11',
       }
     }
@@ -519,4 +531,44 @@ export function emptySpaces(tower: EditorTower, depth: Depth): { readonly center
     rowBottom += floors * FLOOR_PITCH_MM
   }
   return out
+}
+
+/** The x and y extents a part's file should have once squared up, from its assembled size and turn. */
+function storedFootprint(size: Vec3, axes: Axes): [number, number] {
+  const stored = [0, 0, 0]
+  axes.forEach((a, world) => { stored['xyz'.indexOf(a[1])] = size[world] })
+  return [stored[0], stored[1]]
+}
+
+/**
+ * The turn (degrees about the file's z) that squares up a file stored at an angle on the bed: the quarter-turn
+ * of its outline's tightest rectangle whose footprint best matches `want`, the smaller turn on a tie. 0 for a
+ * file stored square. Which way round a symmetric footprint goes (a half-turn) isn't known from the outline.
+ */
+export function planTurn(outline: readonly Point[], want: readonly [number, number]): number {
+  const extents = (deg: number) => {
+    const r = (deg * Math.PI) / 180
+    const [c, s] = [Math.cos(r), Math.sin(r)]
+    let [x0, x1, y0, y1] = [Infinity, -Infinity, Infinity, -Infinity]
+    for (const [x, y] of outline) {
+      const [rx, ry] = [x * c - y * s, x * s + y * c]
+      x0 = Math.min(x0, rx); x1 = Math.max(x1, rx); y0 = Math.min(y0, ry); y1 = Math.max(y1, ry)
+    }
+    return [x1 - x0, y1 - y0] as const
+  }
+  // The tightest rectangle has a side along one of the outline's edges.
+  let best = { area: Infinity, deg: 0 }
+  outline.forEach(([ax, ay], i) => {
+    const [bx, by] = outline[(i + 1) % outline.length]
+    const deg = (-Math.atan2(by - ay, bx - ax) * 180) / Math.PI
+    const [w, h] = extents(deg)
+    if (w * h < best.area - 1e-6) best = { area: w * h, deg }
+  })
+  const [w0, h0] = extents(0)
+  // Stored square (or round): leave it.
+  if (w0 * h0 <= best.area * 1.03) return 0
+  const norm = (d: number) => ((((d + 180) % 360) + 360) % 360) - 180
+  const options = [0, 90, 180, 270].map((k) => norm(best.deg + k))
+  const score = (deg: number) => { const [w, h] = extents(deg); return Math.abs(w - want[0]) + Math.abs(h - want[1]) }
+  return options.reduce((a, b) => (score(b) < score(a) - 0.5 || (Math.abs(score(b) - score(a)) <= 0.5 && Math.abs(b) < Math.abs(a)) ? b : a))
 }

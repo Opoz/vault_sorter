@@ -47,9 +47,10 @@ describe('partsForTower', () => {
       expect(one(drawer('S', { baseplate: 'plain' }))['S3 Baseplate.stl']).toBe(1)
     })
 
-    // Drawer Assembly p4: "place top and bottom geared rails into a box". Each rail file is a single rail.
-    it('adds a top and a bottom geared rail when asked', () => {
-      expect(one(drawer('M', { gearedRails: true }))['M Rails.stl']).toBe(2)
+    // Drawer Assembly p4: "place top and bottom geared rails into a box". Each rails file holds both rails, two
+    // separate pieces (6.2 and 4.8 mm wide), so one print makes the pair.
+    it('adds one print of the geared rails, which holds the top and bottom rail, when asked', () => {
+      expect(one(drawer('M', { gearedRails: true }))['M Rails.stl']).toBe(1)
     })
 
     it('swaps the key for the two-part hidden key', () => {

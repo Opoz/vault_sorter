@@ -153,6 +153,7 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
               center={[c[0] + p.offset, c[1], c[2]]}
               size={p.size}
               axes={p.axes}
+              planDeg={p.planDeg}
               geometry={(() => {
                 const whole = ready?.byPath.get(p.path)
                 return whole && p.piece !== undefined ? pieceGeometry(whole, p.piece) : whole
@@ -221,17 +222,19 @@ const partLabel = (path: string) => path.split('/').pop()!.replace(/\.stl$/i, ''
 const PICKED_COLOUR = '#2f6feb'
 
 /** The turn from a file's stored axes to how the part sits, as a quaternion. */
-const turnOf = (axes: Axes) => {
+const turnOf = (axes: Axes, planDeg = 0) => {
   const m = turnMatrix(axes)
-  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(m[0], m[1], m[2], 0, m[3], m[4], m[5], 0, m[6], m[7], m[8], 0, 0, 0, 0, 1))
+  const turn = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(m[0], m[1], m[2], 0, m[3], m[4], m[5], 0, m[6], m[7], m[8], 0, 0, 0, 0, 1))
+  // A file stored turned on the bed is squared up first, about its own z.
+  return planDeg ? turn.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (planDeg * Math.PI) / 180)) : turn
 }
 
 /** A part: the real mesh when it has loaded, turned into place, otherwise a box at its measured size. */
-function PartBox({ center, size, axes, geometry, colour, faded, picked, onClick, onHover }: {
-  center: Vec3; size: Vec3; axes: Axes; geometry?: THREE.BufferGeometry; colour: string; faded: boolean; picked: boolean
+function PartBox({ center, size, axes, planDeg, geometry, colour, faded, picked, onClick, onHover }: {
+  center: Vec3; size: Vec3; axes: Axes; planDeg?: number; geometry?: THREE.BufferGeometry; colour: string; faded: boolean; picked: boolean
   onClick: (e: ThreeEvent<MouseEvent>) => void; onHover: (over: boolean) => void
 }) {
-  const turn = useMemo(() => turnOf(axes), [axes])
+  const turn = useMemo(() => turnOf(axes, planDeg), [axes, planDeg])
   const material = (
     <meshStandardMaterial
       key={`${faded ? 'faded' : 'solid'}-${geometry ? 'mesh' : 'box'}`}

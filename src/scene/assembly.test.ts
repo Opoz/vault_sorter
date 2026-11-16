@@ -3,7 +3,7 @@ import type { EditorStackedUnit, EditorTower } from '../editor/layoutOps'
 import type { Depth, Height, Width } from '../engine/model'
 import { partsForTower } from '../engine/parts'
 import { realCatalog } from '../engine/testing'
-import { assembleTower, emptySpaces, explodedCenter, type ScenePart } from './assembly'
+import { assembleTower, emptySpaces, explodedCenter, planTurn, type ScenePart } from './assembly'
 import { toEngineTower } from '../editor/layoutOps'
 
 const H2S = { name: 'Bambu Lab H2S', bed: { width: 340, depth: 320 }, height: 340 }
@@ -139,5 +139,38 @@ describe('checked placements', () => {
     const scene = assembleTower(t, 3, opts)
     expect(scene.find((p) => /module/i.test(file(p)))!.checked).toMatch(/Drawer Assembly p8/)
     expect(scene.find((p) => /grid roof/i.test(file(p)))!.checked).toBeUndefined()
+  })
+})
+
+describe('runner stoppers', () => {
+  it('sit in the side slots, which move with depth: 28.5 mm in front of the module middle', () => {
+    for (const depth of [3, 7] as const) {
+      const scene = assembleTower(tower('S', [[[drawer('S', '1F')]]]), depth, opts)
+      const module = scene.find((p) => /module/i.test(file(p)))!
+      for (const stopper of scene.filter((p) => /stopper/i.test(file(p)))) expect(stopper.center[2] - module.center[2]).toBeCloseTo(28.5)
+    }
+  })
+})
+
+describe('planTurn', () => {
+  // A 100 × 20 rectangle, turned by `deg` on the bed.
+  const turned = (deg: number) => {
+    const r = (deg * Math.PI) / 180
+    return ([[-50, -10], [50, -10], [50, 10], [-50, 10]] as const).map(([x, y]) => [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)] as const)
+  }
+  it('leaves a file stored square alone', () => {
+    expect(planTurn(turned(0), [100, 20])).toBe(0)
+  })
+  it('squares up a file stored at an angle, long side where the part needs it', () => {
+    const along = planTurn(turned(45), [100, 20])
+    expect(Math.abs(along) % 180).toBeCloseTo(45)
+    const across = planTurn(turned(45), [20, 100])
+    expect(Math.abs(across) % 180).toBeCloseTo(45)
+    expect(Math.abs(along - across) % 180).toBeCloseTo(90)
+  })
+  it('turns the real L4 1F module, stored diagonally, so its width lies along x', () => {
+    const scene = assembleTower(tower('L', [[[drawer('L', '1F')]]]), 4, opts)
+    const module = scene.find((p) => /module/i.test(file(p)))!
+    expect(Math.abs(module.planDeg ?? 0)).toBeGreaterThan(10)
   })
 })

@@ -324,13 +324,17 @@ function centred(items: PlacedItem[], options: PackOptions, margin: number): Pla
     b.x0 + sx >= edgeOf[i] - 1e-6 && b.y0 + sy >= edgeOf[i] - 1e-6 && b.x1 + sx <= W - edgeOf[i] + 1e-6 && b.y1 + sy <= D - edgeOf[i] + 1e-6 &&
     zones.every((z) => b.x1 + sx + margin <= z.x0 + 1e-6 || b.x0 + sx >= z.x1 + margin - 1e-6 ||
       b.y1 + sy + margin <= z.y0 + 1e-6 || b.y0 + sy >= z.y1 + margin - 1e-6))
-  // As close to the middle as the plate allows: the full move if it fits, otherwise the largest part of it
-  // (a reserved strip can block going all the way), on both axes or on one.
-  for (let t = 1; t > 0; t -= 0.05) {
-    const found = ([[dx * t, dy * t], [dx * t, 0], [0, dy * t]] as const).find(([x, y]) => fits(x, y))
-    if (found) return items.map((item) => ({ ...item, x: item.x + found[0], y: item.y + found[1] }))
+  // As close to the middle as the plate allows: the full move if it fits, otherwise as much of it as fits on
+  // each axis (an edge or a reserved strip can block one axis without the other).
+  const most = (ok: (t: number) => boolean) => {
+    for (let t = 1; t > 0; t -= 0.01) if (ok(t)) return t
+    return 0
   }
-  return items
+  const tx = most((t) => fits(dx * t, 0))
+  const ty = most((t) => fits(dx * tx, dy * t))
+  const tx2 = most((t) => fits(dx * t, dy * ty))
+  if (!fits(dx * tx2, dy * ty)) return items
+  return items.map((item) => ({ ...item, x: item.x + dx * tx2, y: item.y + dy * ty }))
 }
 
 function box(points: readonly Point[]) {

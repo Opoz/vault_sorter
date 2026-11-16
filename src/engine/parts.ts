@@ -430,12 +430,9 @@ function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: 
 
   if (unit.gearedRails) {
     wants.push({
-      tidyPath: `${UNIVERSAL}/geared rails/${w} rails.stl`, qty: 2, role: 'body', source: 'Drawer Assembly p4',
-      flags: [{
-        kind: 'inferred',
-        note: 'Top and bottom rails per box; each rail file holds one rail (about 12 mm wide), so 2 prints.',
-        source: 'Drawer Assembly p4; Rails.stl size',
-      }],
+      // A top and a bottom rail per box (Drawer Assembly p4); every Rails file holds both, as two separate pieces
+      // 6.2 and 4.8 mm wide, so one print makes the pair.
+      tidyPath: `${UNIVERSAL}/geared rails/${w} rails.stl`, qty: 1, role: 'body', source: 'Drawer Assembly p4; the Rails files hold two pieces',
     })
   }
 
