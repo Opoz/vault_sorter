@@ -5,7 +5,6 @@
 import { useState } from 'react'
 import type { PaintScope } from '../editor/paint'
 import { ColorPicker } from './ColorPicker'
-import { rememberColour } from './colour'
 
 export interface PaintSettings {
   /** The colour to paint with; null puts parts back in their Colour role's colour. */
@@ -48,7 +47,7 @@ export function PaintBar({ painting, settings, onToggle, onChange }: {
           <ColorPicker
             label="Paint colour"
             value={settings.colour ?? '#c0392b'}
-            onChange={(hex) => { set({ colour: hex }); rememberColour(hex) }}
+            onChange={(hex) => set({ colour: hex })}
           />
           <button type="button" className={`paint-role${settings.colour ? '' : ' is-on'}`} aria-pressed={!settings.colour} onClick={() => set({ colour: null })}>
             Colour role (undo paint)

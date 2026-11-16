@@ -25,6 +25,7 @@ import { specKey } from './ui/text'
 import { pickInScene, useEditor, withoutPart, type Editor } from './ui/useEditor'
 import { paintedColour, paintPart, type PaintTarget } from './editor/paint'
 import { PaintBar, type PaintSettings } from './ui/PaintBar'
+import { rememberColour } from './ui/colour'
 import { PaintContext, type PaintContextValue } from './ui/paintContext'
 
 // three.js is large: only fetched when the 3D view is first opened.
@@ -143,7 +144,10 @@ export default function App() {
   const [painting, setPainting] = useState(false)
   const [paintSettings, setPaintSettings] = useState<PaintSettings>({ colour: '#c0392b', scope: 'one' })
   const onPaint = useCallback((towerId: string, target: PaintTarget) => {
-    editor.apply(paintPart(editor.layout, towerId, target, paintSettings.colour, paintSettings.scope))
+    // Remembered as a recent colour once it's used, not at every step of dragging through the picker.
+    const result = paintPart(editor.layout, towerId, target, paintSettings.colour, paintSettings.scope)
+    if (result.ok && paintSettings.colour) rememberColour(paintSettings.colour)
+    editor.apply(result)
   }, [editor, paintSettings])
   const paintContext = useMemo((): PaintContextValue => ({
     painting,

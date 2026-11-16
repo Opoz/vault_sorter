@@ -623,6 +623,7 @@ function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, Tower
   const set = (patch: Parameters<typeof updateLayout>[1]) => editor.apply(updateLayout(layout, patch))
   // One colour picker open at a time, under its colour.
   const [openRole, setOpenRole] = useState<ColourRole | null>(null)
+  const [openedWith, setOpenedWith] = useState<string | undefined>()
   return (
     <section className="panel" aria-label="Layout settings">
       <h2>Layout</h2>
@@ -640,7 +641,12 @@ function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, Tower
                 style={{ background: layout.colours[role] }}
                 aria-label={`${name} colour, ${layout.colours[role]}: change`}
                 aria-expanded={openRole === role}
-                onClick={() => setOpenRole(openRole === role ? null : role)}
+                onClick={() => {
+                  // A colour changed in the picker is remembered as a recent colour when the picker closes.
+                  if (openRole && layout.colours[openRole] !== openedWith) rememberColour(layout.colours[openRole])
+                  setOpenedWith(layout.colours[role])
+                  setOpenRole(openRole === role ? null : role)
+                }}
               />
               <span className="colour-name">{name}</span>
               <span className="colour-covers small muted">{covers}</span>
@@ -649,7 +655,7 @@ function LayoutPanel({ editor, info }: { editor: Editor; info: Map<string, Tower
               <ColorPicker
                 label={`${name} colour`}
                 value={layout.colours[role]}
-                onChange={(hex) => { set({ colours: { ...layout.colours, [role]: hex } }); rememberColour(hex) }}
+                onChange={(hex) => set({ colours: { ...layout.colours, [role]: hex } })}
               />
             )}
           </div>

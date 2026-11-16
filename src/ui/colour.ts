@@ -2,7 +2,8 @@
 
 export interface Hsv { readonly h: number; readonly s: number; readonly v: number }
 
-const RECENT_KEY = 'vault-planner:recent-colours'
+// v2: the first list also kept every shade passed while dragging through the picker.
+const RECENT_KEY = 'vault-planner:recent-colours-v2'
 const RECENT_MAX = 10
 
 export function hexToHsv(hex: string): Hsv {
