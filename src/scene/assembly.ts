@@ -472,12 +472,42 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       }
       return [rod(0), rod(1)]
     }
-    const lockX = cx + sideOf(n) * (f.w / 2 - 28)
-    const lockY = f.y0 + moduleH - 20
-    if (/lock holder/.test(file)) return small(path, [lockX, lockY, front + 4], [0, 0, 30], measure)
-    if (/lock inner/.test(file)) return small(path, [lockX, lockY, front + 12], [0, 0, 55], measure)
-    if (/lock outer/.test(file)) return small(path, [lockX, lockY, front + 20], [0, 0, 80], measure)
-    if (/pins/.test(file)) return small(path, [lockX, lockY + 15, front + 8], [0, 15, 100], measure)
+    // Locks: one on an S or M Facade, in the middle; two on L and XL, over the Facade's lock recesses (measured). Each
+    // is a toggle latch (the user): the Lock Holder bolts to the inside of the Facade near its top, "UP" the right
+    // way up, its lugs out through the notch above the recess; the Inner Part hangs from the lugs by its top bore,
+    // and the dark Outer Part pivots on the Inner Part's bottom holes, sitting in the recess and hooking up over the
+    // lid's front edge. Pins join each pivot. Exact heights are inferred.
+    const lockAt = unit.width === 'S' || unit.width === 'M' ? [0] : unit.width === 'L' ? [-82.45, 82.45] : [-127.1, 127.1]
+    const lockX = cx + (lockAt[n] ?? lockAt[0])
+    // The parts chain on side-to-side pins, by bore positions measured in the files: the holder's lug bore takes the
+    // Inner Part's top hole, and the Inner Part's bottom hole (15 mm lower) takes the Outer Part's bore.
+    // The holder's four screw holes (61.3 mm apart along it, 9 mm across) meet blind holes in the back of the Facade,
+    // centred 11.7 mm under the top on a 1F Facade and 17.7 mm on 2F and 4F ones (measured on S, M, L and XL).
+    const holderY = top - (unit.height === '1F' ? 11.7 : 17.7)
+    const holderZ = front - 5 + 20.1 / 2
+    const pinTop: [number, number] = [holderY + 2.69, holderZ + 5.74]
+    const pinLow: [number, number] = [pinTop[0] - 15, pinTop[1]]
+    if (/lock holder/.test(file)) {
+      // Plate (about 5 mm) against the back of the Facade, lugs reaching forward through it.
+      return { center: [lockX, holderY, holderZ], size: [sz, sx, sy], spread: [0, 0, -30], axes: ['-z', '-x', '+y'], checked: SUSTAINER_CHECK }
+    }
+    if (/lock inner/.test(file)) {
+      return { center: [lockX, pinTop[0] - 7.5, pinTop[1]], size: [sz, sx, sy], spread: [0, 0, 55], axes: ['+z', '+x', '+y'], checked: SUSTAINER_CHECK }
+    }
+    if (/lock outer/.test(file)) {
+      // Its bore is 14.4 mm (17.4 on the 2-4F part) below its middle and 3.8 mm in front of it.
+      const below = /2-4f/.test(file) ? 17.38 : 14.38
+      return { center: [lockX, pinLow[0] + below, pinLow[1] - 3.83], size: [sz, sx, sy], spread: [0, 0, 80], axes: ['+z', '+x', '+y'], checked: SUSTAINER_CHECK }
+    }
+    if (/pins/.test(file)) {
+      // Four pins, side to side, two in each pivot, one from each side (the user). The file's pieces are short, long,
+      // short, long (17.9 and 21.3 mm); the long pair is taken to go in the upper pivot (inferred).
+      // The pins are wider at one end; the upper right one is turned end for end to match its pair (the user).
+      const pin = (y: number, z: number, x: number, turned = false): Placement => ({
+        center: [lockX + x, y, z], size: [21.3, 5.2, 7], spread: [x, 15, 100], axes: turned ? ['-x', '+z', '+y'] : ['+x', '+z', '-y'], checked: SUSTAINER_CHECK,
+      })
+      return [pin(pinLow[0], pinLow[1], -16), pin(pinTop[0], pinTop[1], -9), pin(pinLow[0], pinLow[1], 16), pin(pinTop[0], pinTop[1], 9, true)]
+    }
   }
   if (/wall mount second/.test(file)) return small(path, [cx, f.y0 + f.h / 2, -f.d / 2 - 30], [0, 0, -110], measure)
   if (/wall mount/.test(file)) {
