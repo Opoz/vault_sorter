@@ -53,7 +53,8 @@ describe('assembleTower', () => {
     const base = scene.find((p) => /\bbase\b/i.test(file(p)))!
     for (const m of modules) {
       expect(boxTop(m)).toBeLessThanOrEqual(boxBottom(roof) + 0.01)
-      expect(boxBottom(m)).toBeGreaterThanOrEqual(boxTop(base) - 0.01)
+      // The base's 5 mm clips reach up into the bottom Module's feet; its top surface meets the Module's body.
+      expect(boxBottom(m) + 0.5).toBeGreaterThanOrEqual(boxTop(base) - 5 - 0.01)
     }
     // 1F + 3F of rows below (4 floors of 48 mm), then the top Row's 2F sustainer, which stands taller than its two
     // floors: its 84.8 mm Module and the lid's top surface 13.9 mm above it. The roof sits on that, the lid's tabs

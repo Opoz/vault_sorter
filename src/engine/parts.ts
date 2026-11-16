@@ -195,8 +195,8 @@ function bottomParts(tower: Tower, ctx: Ctx): Want[] {
       tidyPath: foot, qty: 2, role: 'body',
       flags: [{
         kind: 'inferred',
-        note: 'Wheeled towers use one foot opposite the wheels; a tower on feet alone is assumed to need two.',
-        source: 'Modifications p6',
+        note: 'Wheeled towers use one foot opposite the wheels; a tower on feet alone is assumed to need two. The base has bolt holes for a foot only at the front, though, so the back one has nothing to bolt to.',
+        source: 'Modifications p6; the base files (L4 measured)',
       }],
     }]
   }

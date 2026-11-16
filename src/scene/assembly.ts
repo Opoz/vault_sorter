@@ -211,6 +211,7 @@ const OUTER_BOLT: Partial<Record<Width, number>> = { M: 92, L: 130, XL: 170 }
 /** Sustainer poses read from the files, matched to the pictures and confirmed by the user (no assembly manual). */
 const SUSTAINER_CHECK = 'Instructions Manual pp12 and 17, with the user'
 /** Sustainer hinges, checked with the user against a product render as well. */
+const BASE_CHECK = 'Modifications pp2–6, with the user'
 const HINGE_CHECK = 'Instructions Manual pp12 and 17 and a product render, with the user'
 /** How far either side of a sustainer Module's middle its hinges are (measured on the back-wall pads). */
 const HINGE_X: Record<Width, number> = { S: 51.5, M: 69, L: 86.5, XL: 131.5 }
@@ -594,28 +595,51 @@ function towerPart(path: string, f: Frame, n: number, qty: number, roofT: number
     const t = thick(path)
     return { center: sitting(cx, top, 0, [f.w, t, f.d]), size: [f.w, t, f.d], spread: [0, 0, 0], axes: ['-y', '+x', '+z'] }
   }
+  // The Base stands on end on the bed. S and M Bases stand square, their top (clips 5 mm proud, like a Module's top)
+  // on the file's −y and the flat underside on +y; L and XL ones are turned, like the roofs, top on +x once squared
+  // up (measured on S4, L4 and XL4). It's as deep as a Module plus its
+  // Facade (198.1 on L4), from the Module's back to the Facade's front, and its top surface meets the bottom
+  // Module's body (0.5 mm above the floor line), the clips and the Module's feet interlocking (Modifications
+  // pp2–6; measured). The rod hole runs side to side 30 mm in from the back and 20 mm above the underside.
+  const baseT = 52.2
+  const baseTop = 0.5 + 5
+  const baseBottom = baseTop - baseT
+  const back = -f.d / 2
+  const rod: [number, number] = [baseBottom + 20, back + 30]
   if (/\bbase\b/.test(file)) {
-    const t = thick(path)
     const h = half(file)
-    const d = h === 0 ? f.d : f.d / 2
-    return { center: sitting(cx, -t, h * d / 2, [f.w, t, d]), size: [f.w, t, d], spread: [0, 0, h * 20] }
+    const [, , sz] = measure(path)
+    const z = h === -1 ? back + sz / 2 : f.d / 2 + 10 - sz / 2
+    const square = f.w < 300
+    return { center: [cx, baseTop - baseT / 2, z], size: [f.w, baseT, sz], spread: [0, 0, h * 20], axes: square ? ['-x', '-y', '+z'] : ['-y', '+x', '+z'], checked: BASE_CHECK }
   }
-  if (/connector/.test(file)) return small(path, [cx, -10, 0], [0, -40, 0], measure)
+  if (/connector/.test(file)) return small(path, [cx, baseBottom + 10, 0], [0, -40, 0], measure)
   if (/feet/.test(file)) {
-    const s = measure(path)
-    const [a, b, c] = ranked(s)
-    const r = rankAxes(s)
-    const z = qty === 1 ? f.d / 2 - c / 2 : (n === 0 ? 1 : -1) * (f.d / 2 - c / 2)
-    return { center: [cx, -25 - c / 2, z], size: [a, c, b], spread: [0, -60, 0], axes: [r[0], r[2], r[1]] }
+    // A bar across the underside, bolted up through the Base with M6 × 90 mm bolts: with wheels, one at the front;
+    // without, one at each end (Modifications p6). Its 60.5 mm puts the floor level with the wheels' bottoms.
+    const [sx, sy, sz] = measure(path)
+    // The front foot's bolt holes (30 mm from its front edge, ±104 mm across) meet the Base's pair 42 mm in from its
+    // front (measured on L4). The Base has no such holes at the back, so a back foot there is a guess.
+    const front = f.d / 2 + 10 - 12 - sy / 2
+    // The file's −z face goes up against the Base (the user); the back foot is the front one turned round, so both
+    // slopes face inward (the user, inferred).
+    const atBack = qty > 1 && n === 1
+    const z = atBack ? back + sy / 2 : front
+    return { center: [cx, baseBottom - sz / 2, z], size: [sx, sz, sy], spread: [0, -60, 0], axes: atBack ? ['+x', '-z', '+y'] : ['-x', '-z', '-y'], checked: BASE_CHECK }
   }
   if (/disk|bushing|tyre|cover/.test(file)) {
-    // Two wheels at the back corners, axle across.
-    const s = measure(path)
-    const [a, , c] = ranked(s)
-    const r = rankAxes(s)
-    const order = ['tyre', 'disk', 'bushing', 'cover'].findIndex((k) => file.includes(k))
-    const x = cx + sideOf(n) * (f.w / 2 + 6 + order * 6)
-    return { center: [x, -a / 2 - 10, -f.d / 2 + a / 2], size: [c, a, a], spread: [sideOf(n) * (30 + order * 25), -60, 0], axes: [r[2], r[0], r[1]] }
+    // A wheel each side on the rod at the back: the bushing on the rod against the Base, the disk on it, the TPU
+    // tyre round the disk and the cover bolted on outside (Modifications pp2–6). Each round part's axis (its file
+    // z) runs along the rod; the right wheel is the left one turned round (inferred faces).
+    const [, , sz] = measure(path)
+    const side = sideOf(n)
+    const out = /bushing/.test(file) ? 16.5 : /disk/.test(file) ? 10 : /tyre/.test(file) ? 20.3 : 32
+    const order = ['bushing', 'disk', 'tyre', 'cover'].findIndex((k) => file.includes(k))
+    return {
+      center: [cx + side * (f.w / 2 + out), rod[0], rod[1]], size: [sz, 160, 160],
+      // The disk faces the other way from the cover (the user).
+      spread: [side * (30 + order * 25), -60, 0], axes: (side > 0) !== /disk/.test(file) ? ['+z', '+x', '+y'] : ['-z', '+x', '-y'], checked: BASE_CHECK,
+    }
   }
   if (/stationary handle|pull-out handle\b|pull-out handle$/.test(file)) {
     const s = measure(path)
