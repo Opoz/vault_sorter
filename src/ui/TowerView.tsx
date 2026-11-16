@@ -6,6 +6,7 @@ import {
   type EditorUnit,
 } from '../editor/layoutOps'
 import type { Width } from '../engine/model'
+import { columnMismatchMm } from '../engine/dimensions'
 import { topHandleCount } from '../engine/parts'
 import { BASE_MM, belowBaseMm, CASTER, FEET_INSET_MM, FOOT_MM, HANDLE_MM, HEAVYWEIGHT_HANDLE_MM, PULL_OUT, LIP_MM, ROOF_MM, towerHeightMm, TYRE_WIDTH_MM, WHEEL_MM, WIDTH_MM, floorsHeightMm, FLOOR_MM } from './dims'
 import { describe } from './text'
@@ -220,8 +221,13 @@ function RowView(props: {
   const rowPx = floorsHeightMm(rowFloors(row)) * scale
   const short = columnShortfall(row)
   const missing = row.columns.length === 1 && problem !== undefined
+  // Columns that end at different real heights (a 1F sustainer beside a 1F drawer): not blocking, but worth a look.
+  const mismatch = columnMismatchMm(row.columns)
+  const warning = mismatch === undefined ? undefined
+    : `The columns end ${mismatch.toFixed(1)} mm apart, so what sits on them won't be level (a 1F sustainer stands 12.7 mm taller than a 1F drawer).`
   return (
     <div className={`tower-row${problem ? ' is-incomplete' : ''}${missing && row.soloSide === 'right' ? ' is-solo-right' : ''}`} style={{ height: rowPx }}>
+      {warning && <span className="row-warning" title={warning} role="img" aria-label={warning}>⚠ {mismatch!.toFixed(1)} mm</span>}
       {row.columns.map((column, ci) => (
         <ColumnView
           key={column.id}
@@ -269,7 +275,7 @@ function RowView(props: {
           </Slot>
         )
       })()}
-      <span className="sr-only">Row {rowIndex + 1}{problem ? `: ${problem}` : ''}</span>
+      <span className="sr-only">Row {rowIndex + 1}{problem ? `: ${problem}` : ''}{warning ? `. ${warning}` : ''}</span>
     </div>
   )
 }

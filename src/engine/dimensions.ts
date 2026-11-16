@@ -28,13 +28,27 @@ export const unitHeightMm = (unit: Pick<StackedUnit, 'kind' | 'height'>) =>
 /** How far apart a split Row's Columns may end, in mm, before it's worth a warning. */
 const COLUMN_MISMATCH_MM = 3
 
-/** Each Column's real height in a Row (empty floors below a Unit count 48 mm each). */
-function columnHeightsMm(row: Tower['rows'][number]): number[] {
-  return columnsOf(row).map((c) => c.units.reduce((mm, u) => mm + ((u as { gapBelow?: number }).gapBelow ?? 0) * FLOOR_PITCH_MM + unitHeightMm(u), 0))
+/** A Column as both the engine and the editor have it: Units bottom first, maybe with empty floors under them. */
+interface ColumnLike { readonly units: readonly (Pick<StackedUnit, 'kind' | 'height'> & { readonly gapBelow?: number })[] }
+
+/** Each Column's real height (empty floors below a Unit count 48 mm each). */
+export function columnHeightsMm(columns: readonly ColumnLike[]): number[] {
+  return columns.map((c) => c.units.reduce((mm, u) => mm + (u.gapBelow ?? 0) * FLOOR_PITCH_MM + unitHeightMm(u), 0))
+}
+
+/**
+ * How far apart a split Row's Columns end, in mm, when that's enough to notice (a 1F Sustainer beside a 1F drawer
+ * is 12.7 mm taller); undefined when they end level.
+ */
+export function columnMismatchMm(columns: readonly ColumnLike[]): number | undefined {
+  if (columns.length < 2) return undefined
+  const heights = columnHeightsMm(columns)
+  const spread = Math.max(...heights) - Math.min(...heights)
+  return spread > COLUMN_MISMATCH_MM ? spread : undefined
 }
 
 /** A Row's real height: its tallest Column. */
-export const rowHeightMm = (row: Tower['rows'][number]) => Math.max(0, ...columnHeightsMm(row))
+export const rowHeightMm = (row: Tower['rows'][number]) => Math.max(0, ...columnHeightsMm(columnsOf(row)))
 
 export interface TowerDimensions {
   readonly widthMm: number
@@ -71,10 +85,8 @@ export function towerDimensions(tower: Tower, options: PartsOptions): TowerDimen
     })
   }
   tower.rows.forEach((row, i) => {
-    const heights = columnHeightsMm(row)
-    if (heights.length < 2) return
-    const spread = Math.max(...heights) - Math.min(...heights)
-    if (spread > COLUMN_MISMATCH_MM) {
+    const spread = columnMismatchMm(columnsOf(row))
+    if (spread !== undefined) {
       flags.push({
         kind: 'warning',
         note: `Row ${i + 1}'s columns end ${spread.toFixed(1)} mm apart, so what sits on them won't be level (a 1F sustainer stands 12.7 mm taller than a 1F drawer).`,

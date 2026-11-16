@@ -457,3 +457,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .picked-part { margin: 0 0 1rem; padding: 0.6rem 0.75rem; border-radius: var(--radius-control); background: rgb(47 111 235 / 0.08); box-shadow: inset 3px 0 0 var(--select); }
 .picked-part p { margin: 0; }
 .picked-part .hint { margin-top: 0.25rem; font-size: 0.8rem; color: var(--ink-soft); }
+
+/* A split row whose columns end at different real heights: a note, not a blocker. */
+.tower-row { position: relative; }
+.row-warning { position: absolute; left: 50%; top: 0; transform: translate(-50%, -60%); z-index: 3; padding: 0.1rem 0.4rem; border-radius: 999px; background: #fff4e0; color: #8a4b00; border: 1px solid #e4a64a; font-size: 0.72rem; white-space: nowrap; pointer-events: auto; }
