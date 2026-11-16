@@ -71,3 +71,41 @@ export function simplify(corners: Float32Array, target = TARGET_TRIANGLES): Disp
   for (let cell = FIRST_CELL_MM * 2; mesh.index.length / 3 > target && cell <= LAST_CELL_MM; cell *= 2) mesh = cluster(corners, cell)
   return mesh
 }
+
+/**
+ * The separate pieces of a mesh (groups of triangles that share corners), for files that hold several loose
+ * parts printed together, like a pair of springs. The triangles are reordered piece by piece; `pieces` holds
+ * each piece's first index and index count, ordered by where the piece sits in the file (its lowest y, then x).
+ */
+export function splitPieces(mesh: DisplayMesh): DisplayMesh & { readonly pieces: Uint32Array } {
+  const { positions, index } = mesh
+  const parent = new Uint32Array(positions.length / 3).map((_, i) => i)
+  const find = (i: number): number => {
+    while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] }
+    return i
+  }
+  const join = (a: number, b: number) => { const [ra, rb] = [find(a), find(b)]; if (ra !== rb) parent[ra] = rb }
+  for (let t = 0; t < index.length; t += 3) { join(index[t], index[t + 1]); join(index[t], index[t + 2]) }
+  // Each piece's triangles, and where it sits.
+  const groups = new Map<number, { tris: number[]; minY: number; minX: number }>()
+  for (let t = 0; t < index.length; t += 3) {
+    const root = find(index[t])
+    let g = groups.get(root)
+    if (!g) { g = { tris: [], minY: Infinity, minX: Infinity }; groups.set(root, g) }
+    g.tris.push(t)
+    for (let k = 0; k < 3; k++) {
+      g.minX = Math.min(g.minX, positions[index[t + k] * 3])
+      g.minY = Math.min(g.minY, positions[index[t + k] * 3 + 1])
+    }
+  }
+  const ordered = [...groups.values()].sort((a, b) => a.minY - b.minY || a.minX - b.minX)
+  const out = new Uint32Array(index.length)
+  const pieces = new Uint32Array(ordered.length * 2)
+  let at = 0
+  ordered.forEach((g, i) => {
+    pieces[i * 2] = at
+    for (const t of g.tris) { out[at++] = index[t]; out[at++] = index[t + 1]; out[at++] = index[t + 2] }
+    pieces[i * 2 + 1] = at - pieces[i * 2]
+  })
+  return { positions, index: out, pieces }
+}

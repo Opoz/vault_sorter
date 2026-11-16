@@ -38,9 +38,11 @@ describe('assembleTower', () => {
     const depth: Depth = 4
     const lines = partsForTower(toEngineTower(full, depth)!, opts).filter((l) => !/jig/i.test(l.path))
     const scene = assembleTower(full, depth, opts)
-    const count = (path: string) => scene.filter((p) => p.path === path).length
+    // A file drawn as several loose pieces (the springs) counts once per copy.
+    const copies = scene.filter((p) => !p.piece)
+    const count = (path: string) => copies.filter((p) => p.path === path).length
     for (const line of lines) expect([line.path, count(line.path)]).toEqual([line.path, line.qty])
-    expect(scene.length).toBe(lines.reduce((n, l) => n + l.qty, 0))
+    expect(copies.length).toBe(lines.reduce((n, l) => n + l.qty, 0))
     expect(new Set(scene.map((p) => p.key)).size).toBe(scene.length)
   })
 
@@ -128,5 +130,14 @@ describe('emptySpaces', () => {
     const spaces = emptySpaces(t, 4)
     // Under the floating unit (2F on the right) and the whole missing left side (3F).
     expect(spaces.map((s) => [Math.sign(s.center[0]), Math.round(s.size[1] / 48)]).sort()).toEqual([[-1, 3], [1, 2]])
+  })
+})
+
+describe('checked placements', () => {
+  it('marks the drawer Module as checked against the manual, and leaves guesses unmarked', () => {
+    const t = tower('S', [[[drawer('S', '1F')]]])
+    const scene = assembleTower(t, 3, opts)
+    expect(scene.find((p) => /module/i.test(file(p)))!.checked).toMatch(/Drawer Assembly p8/)
+    expect(scene.find((p) => /grid roof/i.test(file(p)))!.checked).toBeUndefined()
   })
 })

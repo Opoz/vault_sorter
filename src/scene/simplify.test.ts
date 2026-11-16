@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { binaryStlCorners, cluster, simplify } from './simplify'
+import { binaryStlCorners, cluster, simplify, splitPieces } from './simplify'
 import { turnMatrix } from './assembly'
 
 /** A flat grid of n×n squares, two triangles each, over a 10 mm square. */
@@ -50,10 +50,31 @@ describe('binaryStlCorners', () => {
 describe('turnMatrix', () => {
   const det = (m: number[]) => m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6])
   it('turns without mirroring, for every way of assigning the axes', () => {
-    for (const axes of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]] as const) {
+    for (const axes of [['+x', '+y', '+z'], ['+x', '+z', '+y'], ['+y', '+x', '+z'], ['-x', '-y', '+z'], ['+z', '-x', '-y']] as const) {
       const m = turnMatrix(axes)
       expect(det(m)).toBe(1)
-      axes.forEach((a, row) => expect(Math.abs(m[row * 3 + a])).toBe(1))
+      axes.forEach((a, row) => expect(Math.abs(m[row * 3 + 'xyz'.indexOf(a[1])])).toBe(1))
     }
+  })
+
+  it('keeps directions: a module stored upside down turns its −y side up', () => {
+    // World up (row 1) is the file's −y.
+    expect(turnMatrix(['-x', '-y', '+z']).slice(3, 6)).toEqual([0, -1, 0])
+  })
+})
+
+describe('splitPieces', () => {
+  it('finds loose pieces printed in one file, bottom one first', () => {
+    // Two separate squares, the second above the first, given top one first.
+    const square = (y: number) => [0, y, 0, 1, y, 0, 1, y + 1, 0, 0, y, 0, 1, y + 1, 0, 0, y + 1, 0]
+    const mesh = splitPieces(cluster(Float32Array.from([...square(5), ...square(0)]), 0.01))
+    expect([...mesh.pieces]).toEqual([0, 6, 6, 6])
+    // The first piece is the lower square.
+    const ys = [...mesh.index.slice(0, 6)].map((i) => mesh.positions[i * 3 + 1])
+    expect(Math.max(...ys)).toBe(1)
+  })
+
+  it('keeps a connected mesh as one piece', () => {
+    expect([...splitPieces(cluster(sheet(3), 0.01)).pieces]).toEqual([0, 54])
   })
 })

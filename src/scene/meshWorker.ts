@@ -4,11 +4,11 @@
  * big files load. The file comes from the user's own folder and goes nowhere else (docs/adr/0004).
  */
 import { readStl } from '../export/stl'
-import { binaryStlCorners, simplify } from './simplify'
+import { binaryStlCorners, simplify, splitPieces } from './simplify'
 
 export interface MeshRequest { readonly id: number; readonly file: File }
 export type MeshReply =
-  | { readonly id: number; readonly positions: Float32Array; readonly index: Uint32Array }
+  | { readonly id: number; readonly positions: Float32Array; readonly index: Uint32Array; readonly pieces: Uint32Array }
   | { readonly id: number; readonly error: string }
 
 self.onmessage = async (e: MessageEvent<MeshRequest>) => {
@@ -16,9 +16,9 @@ self.onmessage = async (e: MessageEvent<MeshRequest>) => {
   try {
     const buffer = await file.arrayBuffer()
     const corners = binaryStlCorners(buffer) ?? textCorners(buffer)
-    const mesh = simplify(corners)
-    const reply: MeshReply = { id, positions: mesh.positions, index: mesh.index }
-    ;(self as unknown as Worker).postMessage(reply, [mesh.positions.buffer, mesh.index.buffer])
+    const mesh = splitPieces(simplify(corners))
+    const reply: MeshReply = { id, positions: mesh.positions, index: mesh.index, pieces: mesh.pieces }
+    ;(self as unknown as Worker).postMessage(reply, [mesh.positions.buffer, mesh.index.buffer, mesh.pieces.buffer])
   } catch (err) {
     ;(self as unknown as Worker).postMessage({ id, error: err instanceof Error ? err.message : String(err) } satisfies MeshReply)
   }

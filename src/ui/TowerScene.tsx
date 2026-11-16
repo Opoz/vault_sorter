@@ -10,7 +10,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { Colours, EditorTower } from '../editor/layoutOps'
 import type { Depth } from '../engine/model'
 import { assembleTower, emptySpaces, explodedCenter, turnMatrix, type Axes, type ScenePart, type Vec3 } from '../scene/assembly'
-import { loadGeometry } from '../scene/meshCache'
+import { loadGeometry, pieceGeometry } from '../scene/meshCache'
 import { catalog, type Printer } from './data'
 import { useVaultFolder } from './useVaultFolder'
 
@@ -71,7 +71,7 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
     groups.forEach((g, i) => {
       if (widths[i] === 0) return
       const offset = x + widths[i] / 2
-      parts.push(...g.parts.map((p) => ({ ...p, offset, towerId: g.towerId })))
+      parts.push(...g.parts.filter(devOnly).map((p) => ({ ...p, offset, towerId: g.towerId })))
       spaces.push(...g.spaces.map((s) => ({ ...s, center: [s.center[0] + offset, s.center[1], s.center[2]] as Vec3 })))
       x += widths[i] + TOWER_GAP_MM
     })
@@ -153,7 +153,10 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
               center={[c[0] + p.offset, c[1], c[2]]}
               size={p.size}
               axes={p.axes}
-              geometry={ready?.byPath.get(p.path)}
+              geometry={(() => {
+                const whole = ready?.byPath.get(p.path)
+                return whole && p.piece !== undefined ? pieceGeometry(whole, p.piece) : whole
+              })()}
               colour={colours[p.role]}
               faded={focus !== undefined && p.unitId !== focus}
               picked={isPicked(p)}
@@ -304,9 +307,29 @@ function Controls({ target, distance, resetKey }: { target: THREE.Vector3; dista
     if (!c) return
     c.target.copy(target)
     // Front and a little to the right, from slightly above, like the manual's pictures.
-    camera.position.set(target.x + distance * 0.45, target.y + distance * 0.3, target.z + distance * 0.85)
+    const dir = devCameraAngle() ?? new THREE.Vector3(0.45, 0.3, 0.85)
+    camera.position.copy(target).addScaledVector(dir.normalize(), distance)
     c.update()
   }, [camera, target, distance, resetKey])
   useFrame(() => controls.current?.update())
   return null
+}
+
+/**
+ * For checking part poses against the manual while developing: `?cam=<azimuth>,<elevation>` in degrees (azimuth
+ * from the front, positive toward the right) sets the starting camera angle. Ignored in the published app.
+ */
+function devCameraAngle(): THREE.Vector3 | undefined {
+  if (!import.meta.env.DEV) return undefined
+  const m = new URLSearchParams(window.location.search).get('cam')?.match(/^(-?[\d.]+),(-?[\d.]+)$/)
+  if (!m) return undefined
+  const [az, el] = [Number(m[1]) * (Math.PI / 180), Number(m[2]) * (Math.PI / 180)]
+  return new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el))
+}
+
+/** For checking poses while developing: `?only=<pattern>` shows just the parts whose file name matches. */
+function devOnly(part: ScenePart): boolean {
+  if (!import.meta.env.DEV) return true
+  const only = new URLSearchParams(window.location.search).get('only')
+  return !only || new RegExp(only, 'i').test(part.path.split('/').pop()!)
 }

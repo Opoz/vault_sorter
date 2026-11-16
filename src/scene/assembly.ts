@@ -31,25 +31,40 @@ export interface ScenePart {
   /** How far the Part moves out of its group when fully pulled apart, along the way it's fitted. */
   readonly partSpread: Vec3
   /**
-   * How the file is turned from the way it's stored (its print orientation) to how it sits: world x, y and z take
-   * the file's axis axes[0], axes[1] and axes[2]. Inferred; directions within an axis aren't known yet.
+   * How the file is turned from the way it's stored (its print orientation) to how it sits: world x (right),
+   * y (up) and z (front) are the file's axes axes[0], axes[1] and axes[2], e.g. '-y' for up means the file's −y
+   * side faces up.
    */
   readonly axes: Axes
+  /** Where the turn and place were checked against the manual (with the user); absent while they're inferred. */
+  readonly checked?: string
+  /** Which loose piece of the file this is, for files holding several (a pair of springs); absent for the whole file. */
+  readonly piece?: number
 }
 
-/** A file axis (0 x, 1 y, 2 z) for each world axis. */
-export type Axes = readonly [number, number, number]
-const STORED: Axes = [0, 1, 2]
+/** A file axis and its direction. */
+export type Axis = '+x' | '-x' | '+y' | '-y' | '+z' | '-z'
+/** The file axis for world right, up and front. */
+export type Axes = readonly [Axis, Axis, Axis]
+const AXIS: readonly Axis[] = ['+x', '+y', '+z']
+const STORED: Axes = ['+x', '+y', '+z']
+/** Swaps of the stored axes (directions not yet known), by file axis number. */
+const along = (a: number, b: number, c: number): Axes => [AXIS[a], AXIS[b], AXIS[c]]
+/** The same file axis, the other way. */
+const neg = (a: Axis): Axis => ((a[0] === '+' ? '-' : '+') + a[1]) as Axis
 /** The file's axes from longest to shortest. */
-const rankAxes = (s: Vec3): Axes => ([0, 1, 2] as const).slice().sort((a, b) => s[b] - s[a]) as unknown as Axes
+const rankAxes = (s: Vec3): Axes => {
+  const [a, b, c] = [0, 1, 2].sort((i, j) => s[j] - s[i])
+  return along(a, b, c)
+}
 
 /**
- * The turn for `axes` as a 3×3 matrix, row by row (world from file). Swapping two axes alone would mirror the
- * part, so the last row is flipped when needed to keep it a true turn.
+ * The turn for `axes` as a 3×3 matrix, row by row (world from file). An assignment that would mirror the part
+ * (a printed part can only be turned) has its last row flipped to keep it a true turn.
  */
 export function turnMatrix(axes: Axes): number[] {
   const m = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-  axes.forEach((a, row) => { m[row * 3 + a] = 1 })
+  axes.forEach((a, row) => { m[row * 3 + 'xyz'.indexOf(a[1])] = a[0] === '-' ? -1 : 1 })
   const det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6])
   if (det < 0) for (let k = 6; k < 9; k++) m[k] = -m[k]
   return m
@@ -146,17 +161,21 @@ function columnSides(towerWidth: Width, widths: readonly Width[], soloSide?: 'ri
   return widths.map((_, i) => left + widths.slice(0, i).reduce((s, w) => s + MODULE_WIDTH_MM[w], 0))
 }
 
-function placeLine(line: PartLine, place: (n: number) => Placement, groupSpread: Vec3, owner: string, out: ScenePart[], unitId?: string) {
+function placeLine(line: PartLine, place: (n: number) => Placement | Placement[], groupSpread: Vec3, owner: string, out: ScenePart[], unitId?: string) {
   for (let n = 0; n < line.qty; n++) {
-    const p = place(n)
-    out.push({
-      key: `${owner}:${line.path}:${n}`, path: line.path, role: line.role, unitId,
+    const placed = place(n)
+    // A file holding several loose pieces is placed piece by piece.
+    const pieces = Array.isArray(placed) ? placed : [placed]
+    pieces.forEach((p, i) => out.push({
+      key: `${owner}:${line.path}:${n}${Array.isArray(placed) ? `:${i}` : ''}`, path: line.path, role: line.role, unitId,
       center: p.center, size: p.size, groupSpread, partSpread: p.spread, axes: p.axes ?? STORED,
-    })
+      ...(p.checked ? { checked: p.checked } : {}),
+      ...(Array.isArray(placed) ? { piece: i } : {}),
+    }))
   }
 }
 
-interface Placement { readonly center: Vec3; readonly size: Vec3; readonly spread: Vec3; readonly axes?: Axes }
+interface Placement { readonly center: Vec3; readonly size: Vec3; readonly spread: Vec3; readonly axes?: Axes; readonly checked?: string }
 
 const name = (path: string) => path.split('/').pop()!.toLowerCase().replace(/\.stl$/, '')
 /** Sizes sorted largest first. */
@@ -171,7 +190,7 @@ const half = (file: string) => (/part 1\b/.test(file) ? 1 : /part 2\b/.test(file
 const sitting = (cx: number, y0: number, cz: number, size: Vec3): Vec3 => [cx, y0 + size[1] / 2, cz]
 
 /** Where one copy of a Unit's part goes, in the Unit's frame. */
-function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, measure: (p: string) => Vec3): Placement {
+function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, measure: (p: string) => Vec3): Placement | Placement[] {
   const file = name(path)
   const [sx, sy, sz] = measure(path)
   const cx = f.x0 + f.w / 2
@@ -184,12 +203,15 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
     const boxH = f.h - 10.5
     const boxBottom = f.y0 + (f.h - boxH) / 2
     const boxSpread: Vec3 = [0, 0, out]
-    if (/\bmodule\b/.test(file)) return { center: sitting(cx, f.y0, 0, [f.w, f.h, f.d]), size: [f.w, f.h, f.d], spread: [0, 0, 0] }
+    // Stored upside down, front facing +z: the "S3" mark and "align to connect" are on the file's −y side, which
+    // is the top (Drawer Assembly pp7–8), and the +z end is open.
+    if (/\bmodule\b/.test(file)) return { center: sitting(cx, f.y0, 0, [f.w, f.h, f.d]), size: [f.w, f.h, f.d], spread: [0, 0, 0], axes: ['-x', '-y', '+z'], checked: 'Drawer Assembly p8, step 11' }
     if (/\bbox\b/.test(file)) {
       const h = half(file)
       const d = h === 0 ? f.d - 2.3 : (f.d - 2.3) / 2
       const z = front - (h === -1 ? (f.d - 2.3) * 0.75 : h === 1 ? d / 2 : d / 2)
-      return { center: sitting(cx, boxBottom, z, [boxW, boxH, d]), size: [boxW, boxH, d], spread: add(boxSpread, [0, 0, h * 15]), axes: [0, 2, 1] }
+      // Printed open side up; the end with the facade's two bolt holes and the lock notch is the file's +y.
+      return { center: sitting(cx, boxBottom, z, [boxW, boxH, d]), size: [boxW, boxH, d], spread: add(boxSpread, [0, 0, h * 15]), axes: ['-x', '+z', '+y'], checked: 'Drawer Assembly p6, step 8' }
     }
     if (/back panel/.test(file)) {
       return { center: sitting(cx, boxBottom, front - f.d + 4, [boxW, boxH, 3]), size: [boxW, boxH, 3], spread: add(boxSpread, [0, 0, -30]), axes: rankAxes([sx, sy, sz]) }
@@ -198,47 +220,97 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       const h = half(file)
       const size: Vec3 = [sx, Math.min(sz, 4), h === 0 ? sy : sy]
       const z = h === 0 ? front - f.d / 2 : front - f.d / 2 + h * (sy / 2)
-      return { center: sitting(cx, boxBottom + 2, z, size), size, spread: add(boxSpread, [0, boxH + 25, 0]), axes: [0, 2, 1] }
+      return { center: sitting(cx, boxBottom + 2, z, size), size, spread: add(boxSpread, [0, boxH + 25, 0]), axes: along(0, 2, 1) }
     }
-    if (/facade cap/.test(file)) return small(path, [cx + f.w / 2 - 15, f.y0 + f.h / 2, front + 12], add(boxSpread, [0, 0, 80]), measure)
+    // Facades lie face up (+z), upside down: seen from the front, the label recess is on the left and the cap's
+    // hole on the right (Drawer Assembly p6, step 8). The cap and label sit in them, measured from the S1F file.
+    const facadeT = 10
+    if (/facade cap/.test(file)) return { ...small(path, [cx + 51, f.y0 + f.h / 2, front + facadeT], add(boxSpread, [0, 0, 80]), measure), checked: 'Drawer Assembly p6, step 8' }
     if (/\/facades\/|xl facade/i.test(path)) {
-      return { center: [cx, f.y0 + f.h / 2, front + sz / 2], size: [sx, sy, sz], spread: add(boxSpread, [0, 0, 40]) }
+      return { center: [cx, f.y0 + f.h / 2, front + sz / 2], size: [sx, sy, sz], spread: add(boxSpread, [0, 0, 40]), axes: ['-x', '-y', '+z'], checked: 'Drawer Assembly p6, step 8' }
     }
-    if (/^label$/.test(file)) return flat(path, [cx, f.y0 + f.h - 18, front + 11], add(boxSpread, [0, 0, 70]), measure)
-    // The key turns in the Facade and sits mostly behind it: only its cap shows.
-    if (/^key cap/.test(file)) return small(path, [cx, f.y0 + f.h / 2, front + 16], add(boxSpread, [0, 0, 110]), measure)
-    if (/key/.test(file)) {
-      const k = small(path, [0, 0, 0], [0, 0, 0], measure)
-      const z = front - k.size[2] / 2 + (/part 2/.test(file) ? 14 : 8)
-      return { center: [cx, f.y0 + f.h / 2, z], size: k.size, spread: add(boxSpread, [0, 0, /part 2/.test(file) ? 110 : 90]), axes: k.axes }
+    // The label slides into the recess on the left, its printed face (the file's +z) out (Drawer Assembly p5–6),
+    // half-turned so its rounded end faces the key (the user).
+    if (/^label$/.test(file)) {
+      // The recess is 2 mm deep, as thick as the label, so it sits flush with the face.
+      return { ...flat(path, [cx - 56, f.y0 + f.h / 2, front + facadeT - 1], add(boxSpread, [0, 0, 70]), measure), axes: ['-x', '-y', '+z'], checked: 'Drawer Assembly pp5–6' }
     }
+    // The key goes in from the back of the Facade, its knob (the file's +z) through to the front and its gear
+    // behind; the cap presses onto the knob, open side (its +z) inward (Drawer Assembly p1). Both are half-turned
+    // so the pin holes are on the right (the user, against p1 and p6). The knob stands about 15 mm proud.
+    const faceZ = front + facadeT
+    const midY = f.y0 + f.h / 2
+    if (/^key cap/.test(file)) {
+      return { center: [cx, midY, faceZ + 15 - sz / 2 + 2], size: [sx, sy, sz], spread: add(boxSpread, [0, 0, 110]), axes: ['-x', '+y', '-z'], checked: 'Drawer Assembly p1, step 2' }
+    }
+    if (/^key/.test(file)) {
+      return { center: [cx, midY, faceZ + 15 - sz / 2], size: [sx, sy, sz], spread: add(boxSpread, [0, 0, 85]), axes: ['-x', '-y', '+z'], checked: 'Drawer Assembly p1, step 1' }
+    }
+    if (/hidden key/.test(file)) {
+      // Not shown in the manual's pictures: taken to sit like the normal key (inferred).
+      const part2 = /part 2/.test(file)
+      return { center: [cx, midY, faceZ + (part2 ? 4 : 10) - sz / 2], size: [sx, sy, sz], spread: add(boxSpread, [0, 0, part2 ? 110 : 85]), axes: STORED }
+    }
+    // The latch clips into the pocket under the Module, 10–66 mm from its back whatever the depth: arms across,
+    // stem front to back with its ring at the back (Drawer Assembly p8, step 12).
     if (/latch/.test(file)) {
       const size: Vec3 = [sx, sz, sy]
-      return { center: sitting(cx, f.y0 + 1, front - sy / 2 - 4, size), size, spread: [0, -35, f.d * 0.25], axes: [0, 2, 1] }
+      return { center: [cx, f.y0 + 1, -f.d / 2 + 38], size, spread: [0, -40, 0], axes: ['+x', '-z', '+y'], checked: 'Drawer Assembly p8, step 12' }
     }
+    // The springs lie flat on the back of the Facade, one each side of the key's gear (Drawer Assembly p2). The
+    // file holds both, one above the other, so each is placed as its own piece: flat side (the file's −z, printed
+    // on the bed) away from the Facade ("flat side up"), and the end with the file's +x outward, toward the
+    // Facade's bolt posts (the user).
     if (/springs/.test(file)) {
-      const size: Vec3 = [sx, sz, sy]
-      return { center: sitting(cx, f.y0 + 1, front - sy - 50, size), size, spread: [0, -55, f.d * 0.1], axes: [0, 2, 1] }
+      const size: Vec3 = [sx, sy / 2, sz]
+      const spring = (side: 1 | -1): Placement => ({
+        center: [cx + side * 38, midY, front - sz / 2], size, spread: add(boxSpread, [side * 15, 0, 20]),
+        axes: side > 0 ? ['+x', '+y', '+z'] : ['-x', '-y', '+z'], checked: 'Drawer Assembly p2, step 3',
+      })
+      return [spring(1), spring(-1)]
     }
+    // Runners ride in the channel low on each side of the Box, centred on its first floor: the slide in the Box's
+    // channel, the guide over it (Drawer Assembly pp4 and 7). Box, slides and guides go into the Module together,
+    // so they come apart together.
+    const runnerY = boxBottom + 37.5 / 2
     if (/runner guide/.test(file)) {
-      // Guides line the Module's sides: length along the depth, width up the side, thickness across.
+      // The guide's plain, slotted side faces out; its channel opens toward the front (the file's +y), where the
+      // slide comes out. The right one is the left one turned over.
       const size: Vec3 = [sz, sx, sy]
       const x = cx + sideOf(n) * (f.w / 2 - 2 - sz / 2)
-      return { center: sitting(x, boxBottom, front - sy / 2 - 1, size), size, spread: [sideOf(n) * 45, 0, 0], axes: [2, 0, 1] }
+      return {
+        center: [x, runnerY, front - sy / 2 - 1], size, spread: add(boxSpread, [sideOf(n) * 45, 0, 0]),
+        axes: sideOf(n) < 0 ? ['+z', '+x', '+y'] : ['-z', '-x', '+y'], checked: 'Drawer Assembly p7, step 9',
+      }
     }
     if (/runner slide/.test(file)) {
+      // The slide's notched end (the file's −y end) is at the back (the user, against Drawer Assembly p4).
       const size: Vec3 = [sz, sx, sy]
       const x = cx + sideOf(n) * (boxW / 2 + sz / 2)
-      return { center: sitting(x, boxBottom + 2, front - sy / 2 - 6, size), size, spread: add(boxSpread, [sideOf(n) * 25, 0, 0]), axes: [2, 0, 1] }
+      return {
+        center: [x, runnerY, front - sy / 2 - 6], size, spread: add(boxSpread, [sideOf(n) * 22, 0, 0]),
+        axes: sideOf(n) < 0 ? ['+z', '+x', '+y'] : ['-z', '-x', '+y'], checked: 'Drawer Assembly p4, step 6',
+      }
     }
     if (/runner stopper/.test(file)) {
-      return small(path, [cx + sideOf(n) * (f.w / 2 - 8), boxBottom + 10, front - f.d + 12], [sideOf(n) * 45, 0, -30], measure)
+      // Pushed into the slot in each side of the Module, 44 mm behind its front, once the Box is in (Drawer
+      // Assembly p8). Taller Modules have a slot per floor; a single Box's stoppers are taken to use the lowest,
+      // level with its runners (inferred).
+      // Its length (17.9 mm) runs front to back along the slot, with the file's middle-length side facing into
+      // the Module (the user, against Drawer Assembly p8). The right one is the left one turned round.
+      const st = measure(path)
+      const [a, b, c] = ranked(st)
+      const r = rankAxes(st)
+      return {
+        center: [cx + sideOf(n) * (f.w / 2 + 1), runnerY, front - 44], size: [b, c, a], spread: [sideOf(n) * 45, 0, 0],
+        axes: sideOf(n) < 0 ? [r[1], neg(r[2]), r[0]] : [neg(r[1]), neg(r[2]), neg(r[0])], checked: 'Drawer Assembly p8, step 11',
+      }
     }
     if (/rails/.test(file)) {
       // Geared rails: one under the Box and one over it, front to back.
       const size: Vec3 = [sz, sy, sx]
       const y = n % 2 === 0 ? boxBottom - sy : boxBottom + boxH
-      return { center: sitting(cx, y, front - sx / 2 - 10, size), size, spread: add(boxSpread, [0, n % 2 === 0 ? -20 : 20, 0]), axes: [2, 1, 0] }
+      return { center: sitting(cx, y, front - sx / 2 - 10, size), size, spread: add(boxSpread, [0, n % 2 === 0 ? -20 : 20, 0]), axes: along(2, 1, 0) }
     }
   } else {
     // Sustainers: a Module open at the top, a lid (the Roof file) over it, a Facade on the front, hinges at the
@@ -251,7 +323,7 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       const h = half(file)
       const d = h === 0 ? f.d - 4 : (f.d - 4) / 2
       const z = h * d / 2
-      return { center: sitting(cx, f.y0 + modH, z, [f.w - 4, lidT, d]), size: [f.w - 4, lidT, d], spread: add(lidSpread, [0, 0, h * 15]), axes: [0, 2, 1] }
+      return { center: sitting(cx, f.y0 + modH, z, [f.w - 4, lidT, d]), size: [f.w - 4, lidT, d], spread: add(lidSpread, [0, 0, h * 15]), axes: along(0, 2, 1) }
     }
     if (/connector/.test(file)) return small(path, [cx, f.y0 + modH + lidT, 0], add(lidSpread, [0, 25, 0]), measure)
     if (/facade/.test(file)) {
@@ -325,7 +397,7 @@ function towerPart(path: string, f: Frame, n: number, qty: number, roofT: number
   }
   if (/roof/.test(file)) {
     const t = thick(path)
-    return { center: sitting(cx, top, 0, [f.w, t, f.d]), size: [f.w, t, f.d], spread: [0, 0, 0], axes: [0, 2, 1] }
+    return { center: sitting(cx, top, 0, [f.w, t, f.d]), size: [f.w, t, f.d], spread: [0, 0, 0], axes: along(0, 2, 1) }
   }
   if (/\bbase\b/.test(file)) {
     const t = thick(path)
