@@ -168,6 +168,7 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
               center={[c[0] + p.offset, c[1], c[2]]}
               size={p.size}
               axes={p.axes}
+              slopeDeg={p.slopeDeg}
               geometry={(() => {
                 const whole = ready?.byPath.get(p.path)
                 const piece = whole && p.piece !== undefined ? pieceGeometry(whole, p.piece) : whole
@@ -266,11 +267,14 @@ const turnOf = (axes: Axes) => {
 }
 
 /** A part: the real mesh when it has loaded, turned into place, otherwise a box at its measured size. */
-function PartBox({ center, size, axes, geometry, colour, faded, picked, onClick, onHover }: {
-  center: Vec3; size: Vec3; axes: Axes; geometry?: THREE.BufferGeometry; colour: string; faded: boolean; picked: boolean
+function PartBox({ center, size, axes, slopeDeg = 0, geometry, colour, faded, picked, onClick, onHover }: {
+  center: Vec3; size: Vec3; axes: Axes; slopeDeg?: number; geometry?: THREE.BufferGeometry; colour: string; faded: boolean; picked: boolean
   onClick: (e: ThreeEvent<MouseEvent>) => void; onHover: (over: boolean) => void
 }) {
-  const turn = useMemo(() => turnOf(axes), [axes])
+  const turn = useMemo(() => {
+    const t = turnOf(axes)
+    return slopeDeg ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (slopeDeg * Math.PI) / 180).multiply(t) : t
+  }, [axes, slopeDeg])
   const material = (
     <meshStandardMaterial
       key={`${faded ? 'faded' : 'solid'}-${geometry ? 'mesh' : 'box'}`}

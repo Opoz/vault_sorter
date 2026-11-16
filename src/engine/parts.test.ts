@@ -98,8 +98,8 @@ describe('partsForTower', () => {
         'S3 1F Module.stl': 1,
         'S3 Roof.stl': 1,
         'S1F Facade.stl': 1,
-        'S-M 1F Hinge.stl': 2,
-        'S Hinge Top.stl': 2,
+        'S-M 1F Hinge.stl': 1,
+        'S Hinge Top.stl': 1,
         'S-M Rods.stl': 1,
         'LOCK HOLDER.stl': 1,
         'LOCK INNER PART.stl': 1,
@@ -112,8 +112,8 @@ describe('partsForTower', () => {
     it('uses the taller hinge and lock parts and the chosen module type for a 2F L sustainer', () => {
       const parts = one(sustainer('L', 'sealed'), '2F')
       expect(parts['L3 2F Sealed Module.stl']).toBe(1)
-      expect(parts['L 2-4F Hinge.stl']).toBe(2)
-      expect(parts['L-XL Hinge Top.stl']).toBe(2)
+      expect(parts['L 2-4F Hinge.stl']).toBe(1)
+      expect(parts['L-XL Hinge Top.stl']).toBe(1)
       expect(parts['LOCK OUTER PART 2-4F.stl']).toBe(2)
       expect(parts['L2F Facade.stl']).toBe(1)
     })

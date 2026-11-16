@@ -344,10 +344,12 @@ function sustainerParts(unit: SustainerUnit, depth: number, height: string, ctx:
       tidyPath: w === 'XL' ? `${family}/xl${h} facade.stl` : `${family}/facades/${w}${h} facade.stl`,
       qty: 1, role: 'body',
     },
-    { tidyPath: `${SUSTAINER_UNIVERSAL}/hinges/${hinge}.stl`, qty: 2, role: 'body', flags: [fromPicture] },
+    // Every hinge file holds both hinges (two mirror-image pieces), so one print. An S or M sustainer has a single
+    // hinge top in the middle (the user); the L-XL file holds both of an L or XL's (measured on the files).
+    { tidyPath: `${SUSTAINER_UNIVERSAL}/hinges/${hinge}.stl`, qty: 1, role: 'body', flags: [fromPicture], source: 'Instructions Manual p17; the hinge files hold two pieces' },
     {
       tidyPath: `${SUSTAINER_UNIVERSAL}/hinges/${small ? w : 'l-xl'} hinge top.stl`,
-      qty: 2, role: 'body', flags: [fromPicture],
+      qty: 1, role: 'body', source: 'Instructions Manual p17; the user (one on S and M); the L-XL file holds two pieces',
     },
     {
       tidyPath: `${SUSTAINER_UNIVERSAL}/rods/${small ? 's-m' : 'l-xl'} rods.stl`, qty: 1, role: 'body',

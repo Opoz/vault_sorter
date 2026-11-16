@@ -45,6 +45,8 @@ export interface ScenePart {
    * it up, applied before `axes`. Absent for files stored square.
    */
   readonly planDeg?: number
+  /** Degrees about the world's z (front to back) after the turn, for a part set at a slope (the hinge pins). */
+  readonly slopeDeg?: number
 }
 
 /** A file axis and its direction. */
@@ -177,6 +179,7 @@ function placeLine(
       key: `${owner}:${line.path}:${n}${Array.isArray(placed) ? `:${i}` : ''}`, path: line.path, role: line.role, unitId,
       center: p.center, size: p.size, groupSpread, partSpread: p.spread, axes: p.axes ?? STORED,
       ...(p.checked ? { checked: p.checked } : {}),
+      ...(p.slopeDeg ? { slopeDeg: p.slopeDeg } : {}),
       ...(Array.isArray(placed) ? { piece: i } : {}),
       ...(() => {
         const deg = planTurn(outline, storedFootprint(p.size, p.axes ?? STORED))
@@ -186,7 +189,7 @@ function placeLine(
   }
 }
 
-interface Placement { readonly center: Vec3; readonly size: Vec3; readonly spread: Vec3; readonly axes?: Axes; readonly checked?: string }
+interface Placement { readonly center: Vec3; readonly size: Vec3; readonly spread: Vec3; readonly axes?: Axes; readonly checked?: string; readonly slopeDeg?: number }
 
 const name = (path: string) => path.split('/').pop()!.toLowerCase().replace(/\.stl$/, '')
 /** Sizes sorted largest first. */
@@ -196,6 +199,10 @@ const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 const OUTER_BOLT: Partial<Record<Width, number>> = { M: 92, L: 130, XL: 170 }
 /** Sustainer poses read from the files, matched to the pictures and confirmed by the user (no assembly manual). */
 const SUSTAINER_CHECK = 'Instructions Manual pp12 and 17, with the user'
+/** Sustainer hinges, checked with the user against a product render as well. */
+const HINGE_CHECK = 'Instructions Manual pp12 and 17 and a product render, with the user'
+/** How far either side of a sustainer Module's middle its hinges are (measured on the back-wall pads). */
+const HINGE_X: Record<Width, number> = { S: 51.5, M: 69, L: 86.5, XL: 131.5 }
 /** Widths whose Modules hold two latches. */
 const TWO_LATCHES: ReadonlySet<Width> = new Set(['L', 'XL'])
 
@@ -414,9 +421,57 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       const down = { '1F': 10, '2F': 44, '4F': 48 }[unit.height]
       return { ...flat(path, [cx - (f.w / 2 - 24.9), facadeTop - down, front + facadeT - 1], [0, 0, 80], measure), axes: ['-x', '-y', '+z'], checked: SUSTAINER_CHECK }
     }
-    if (/hinge top/.test(file)) return small(path, [cx + sideOf(n) * f.w / 4, f.y0 + f.h + 6, -front + 10], add(lidSpread, [0, 30, -40]), measure)
-    if (/hinge/.test(file)) return small(path, [cx + sideOf(n) * f.w / 4, f.y0 + moduleH - 10, -front - 10], [0, 20, -45], measure)
-    if (/rods/.test(file)) return small(path, [cx, f.y0 + moduleH - 10, -front - 18], [0, 40, -70], measure)
+    // Two hinges on the inside of the back wall, each on a raised pad with four bolt holes, this far either side of
+    // the middle (measured on S4, M4, L4 and XL4); the top hole is 16.8 mm under the rim at every height.
+    const hingeX = HINGE_X[unit.width]
+    const back = -f.d / 2
+    // Every hinge part is placed by one shared bore line, side to side behind the back wall, 0.5 mm under the rim and
+    // 6.3 mm behind the wall. That puts each Module leaf on its pad inside the back wall (7.1 mm in), countersunk
+    // face into the box, its neck over the rim and its knuckle behind the box (the user). Bore offsets are measured
+    // in the files; the leaves' knuckles are 40 mm long on S and M, 50 mm on L and XL.
+    const boreY = top - 0.5
+    const boreZ = back - 6.3
+    const knuckle = unit.width === 'S' || unit.width === 'M' ? 40 : 50
+    if (/hinge top/.test(file)) {
+      // Each hinge top's bore runs along the file's z, 21.5 mm behind its middle; the plate reaches forward under
+      // the lid. S and M have one hinge top, in the middle between the two leaves; L and XL have one on the inner
+      // side of each leaf, on the same pin (the user, from a product render). Bolt heads face into the box, so the
+      // countersunk face is down with the lid shut; the L-XL file's two plates lie opposite ways up.
+      const plate = (x: number, over = false): Placement => ({
+        center: [cx + x, boreY, boreZ + 21.5], size: [sz, sx, sy],
+        spread: add(lidSpread, [0, 30, -20]), axes: over ? ['+z', '+x', '+y'] : ['-z', '-x', '+y'], checked: HINGE_CHECK,
+      })
+      const inner = hingeX - knuckle / 2 - sz / 2
+      return /l-xl/.test(file) ? [plate(-inner), plate(inner, true)] : plate(0, true)
+    }
+    if (/hinge/.test(file)) {
+      // The file holds both hinges, mirror images: each a leaf with its knuckle along one end, the bore 7 mm in from
+      // that end and 5.7 mm behind the leaf's middle.
+      const leaf = (piece: 0 | 1): Placement => {
+        const side = piece === 0 ? -1 : 1
+        return {
+          center: [cx + side * hingeX, boreY + 7 - sx / 2, boreZ + 5.7], size: [sz, sx, 25.5],
+          spread: [side * 10, 20, -45], axes: piece === 0 ? ['+z', '+x', '+y'] : ['-z', '+x', '-y'], checked: HINGE_CHECK,
+        }
+      }
+      return [leaf(0), leaf(1)]
+    }
+    if (/rods/.test(file)) {
+      // One pin through each hinge's bore from the outside, its head beyond the knuckle's outer end
+      // (Instructions Manual pp12 and 17), standing 4 mm out from it (the user). The pin is an 8 mm shaft printed
+      // flat side down, so its axis is 2.5 mm off the middle of its box. It slopes about 4°, its inner end lower than
+      // its head, and is lowered so the head stays on the bore line (the user).
+      const rod = (piece: 0 | 1): Placement => {
+        const side = piece === 0 ? -1 : 1
+        const off = side > 0 ? 2.5 : -2.5
+        return {
+          center: [cx + side * (hingeX + knuckle / 2 + 5.5 - sx / 2), boreY - (sx / 2) * Math.sin((4 * Math.PI) / 180), boreZ - off],
+          size: [sx, 8, 8], slopeDeg: side * 4,
+          spread: [side * 60, 20, -45], axes: side > 0 ? ['-x', '+y', '-z'] : ['-x', '-y', '+z'], checked: HINGE_CHECK,
+        }
+      }
+      return [rod(0), rod(1)]
+    }
     const lockX = cx + sideOf(n) * (f.w / 2 - 28)
     const lockY = f.y0 + moduleH - 20
     if (/lock holder/.test(file)) return small(path, [lockX, lockY, front + 4], [0, 0, 30], measure)
