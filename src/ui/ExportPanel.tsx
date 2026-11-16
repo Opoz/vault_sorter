@@ -6,27 +6,16 @@ import { changePrinted } from '../editor/layoutOps'
 import {
   canStreamToFile, estimateProjectBytes, hasTemplate, platesFor, saveBambuProject, saveSingleStl, saveStlZip, type ExportRequest,
 } from '../export/exportTower'
-import {
-  allowFolder, canRememberFolders, chooseFolder, filesSource, folderSource, rememberedFolder,
-  type VaultFolder, type VaultSource,
-} from '../export/vaultFolder'
+import type { VaultFolder } from '../export/vaultFolder'
 import { catalog, printerLabel, type Printer } from './data'
 import type { Editor } from './useEditor'
-
-type FolderState =
-  | { kind: 'checking' }
-  | { kind: 'none' }
-  | { kind: 'needs-permission'; folder: VaultFolder }
-  | { kind: 'ready'; source: VaultSource }
+import { useVaultFolder } from './useVaultFolder'
 
 /** Building a file in memory (browsers that can't stream to disk) gets risky above this size. */
 const MEMORY_WARNING_BYTES = 1.5e9
 
 const sizeText = (bytes: number) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(bytes / 1e6))} MB`)
 const cancelled = (e: unknown) => e instanceof DOMException && e.name === 'AbortError'
-
-// A folder chosen through the folder input lasts for the visit, shared by every tower's panel.
-let sessionSource: VaultSource | undefined
 
 export function ExportPanel({ editor, tower, towerId, towerName, reprint, onReprintDone }: {
   editor: Editor; tower: Tower; towerId: string; towerName: string
@@ -35,22 +24,10 @@ export function ExportPanel({ editor, tower, towerId, towerName, reprint, onRepr
   onReprintDone: () => void
 }) {
   const printer: Printer = editor.printer
-  const remembers = canRememberFolders()
-  const [folder, setFolder] = useState<FolderState>(() =>
-    sessionSource ? { kind: 'ready', source: sessionSource } : remembers ? { kind: 'checking' } : { kind: 'none' })
+  const vault = useVaultFolder()
+  const { folder, remembers } = vault
   const [progress, setProgress] = useState<{ done: number; total: number; what: string } | null>(null)
   const [message, setMessage] = useState<{ kind: 'done' | 'error'; text: string } | null>(null)
-  const input = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (sessionSource || !remembers) return
-    let live = true
-    rememberedFolder().then((r) => {
-      if (!live) return
-      setFolder(!r ? { kind: 'none' } : r.granted ? { kind: 'ready', source: folderSource(r.folder) } : { kind: 'needs-permission', folder: r.folder })
-    })
-    return () => { live = false }
-  }, [remembers])
 
   const req: ExportRequest = {
     tower, towerName, printer, catalog,
@@ -71,20 +48,11 @@ export function ExportPanel({ editor, tower, towerId, towerName, reprint, onRepr
 
   async function pick() {
     setMessage(null)
-    if (!remembers) { input.current?.click(); return }
-    try { setFolder({ kind: 'ready', source: folderSource(await chooseFolder()) }) } catch (e) { fail(e) }
-  }
-
-  function picked(files: FileList | null) {
-    if (!files?.length) return
-    try {
-      sessionSource = filesSource(files)
-      setFolder({ kind: 'ready', source: sessionSource })
-    } catch (e) { fail(e) }
+    try { await vault.pick() } catch (e) { fail(e) }
   }
 
   async function allow(f: VaultFolder) {
-    setFolder((await allowFolder(f)) ? { kind: 'ready', source: folderSource(f) } : { kind: 'needs-permission', folder: f })
+    try { await vault.allow(f) } catch (e) { fail(e) }
   }
 
   const box = useRef<HTMLDivElement>(null)
@@ -153,17 +121,6 @@ export function ExportPanel({ editor, tower, towerId, towerName, reprint, onRepr
         {folder.kind === 'needs-permission' && <>Vault folder: <strong>{folder.folder.name}</strong>. The browser needs your OK to read it again.</>}
         {folder.kind === 'ready' && <>Vault folder: <strong>{folder.source.name}</strong>{remembers ? '' : ' (choose it again next visit)'}</>}
       </p>
-      {!remembers && (
-        <input
-          ref={input}
-          type="file"
-          hidden
-          // Not in React's types, but supported by every major browser.
-          {...{ webkitdirectory: '', directory: '' }}
-          multiple
-          onChange={(e) => { picked(e.target.files); e.target.value = '' }}
-        />
-      )}
       <div className="panel-actions inline">
         {folder.kind === 'none' && <button type="button" onClick={pick}>Choose your Vault folder</button>}
         {folder.kind === 'needs-permission' && <button type="button" onClick={() => allow(folder.folder)}>Allow reading {folder.folder.name}</button>}

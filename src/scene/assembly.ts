@@ -30,6 +30,29 @@ export interface ScenePart {
   readonly groupSpread: Vec3
   /** How far the Part moves out of its group when fully pulled apart, along the way it's fitted. */
   readonly partSpread: Vec3
+  /**
+   * How the file is turned from the way it's stored (its print orientation) to how it sits: world x, y and z take
+   * the file's axis axes[0], axes[1] and axes[2]. Inferred; directions within an axis aren't known yet.
+   */
+  readonly axes: Axes
+}
+
+/** A file axis (0 x, 1 y, 2 z) for each world axis. */
+export type Axes = readonly [number, number, number]
+const STORED: Axes = [0, 1, 2]
+/** The file's axes from longest to shortest. */
+const rankAxes = (s: Vec3): Axes => ([0, 1, 2] as const).slice().sort((a, b) => s[b] - s[a]) as unknown as Axes
+
+/**
+ * The turn for `axes` as a 3×3 matrix, row by row (world from file). Swapping two axes alone would mirror the
+ * part, so the last row is flipped when needed to keep it a true turn.
+ */
+export function turnMatrix(axes: Axes): number[] {
+  const m = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+  axes.forEach((a, row) => { m[row * 3 + a] = 1 })
+  const det = m[0] * (m[4] * m[8] - m[5] * m[7]) - m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6])
+  if (det < 0) for (let k = 6; k < 9; k++) m[k] = -m[k]
+  return m
 }
 
 export const POSE_SOURCE = 'Inferred from part sizes and the assembly pictures (Drawer Assembly pp1–8, Instructions Manual pp10–18, Modifications); not yet checked part by part'
@@ -97,7 +120,7 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
         parts.push({
           key: `tower:${ri}:${line.path}:${n}`, path: line.path, role: line.role,
           center: [0, y + h / 2, z], size: [w, h, t],
-          groupSpread: [0, (y + h / 2) * UNIT_LIFT, -60], partSpread: [0, 0, pegboard ? -120 : -50],
+          groupSpread: [0, (y + h / 2) * UNIT_LIFT, -60], partSpread: [0, 0, pegboard ? -120 : -50], axes: STORED,
         })
         if (!pegboard) y += h
       }
@@ -128,12 +151,12 @@ function placeLine(line: PartLine, place: (n: number) => Placement, groupSpread:
     const p = place(n)
     out.push({
       key: `${owner}:${line.path}:${n}`, path: line.path, role: line.role, unitId,
-      center: p.center, size: p.size, groupSpread, partSpread: p.spread,
+      center: p.center, size: p.size, groupSpread, partSpread: p.spread, axes: p.axes ?? STORED,
     })
   }
 }
 
-interface Placement { readonly center: Vec3; readonly size: Vec3; readonly spread: Vec3 }
+interface Placement { readonly center: Vec3; readonly size: Vec3; readonly spread: Vec3; readonly axes?: Axes }
 
 const name = (path: string) => path.split('/').pop()!.toLowerCase().replace(/\.stl$/, '')
 /** Sizes sorted largest first. */
@@ -166,16 +189,16 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       const h = half(file)
       const d = h === 0 ? f.d - 2.3 : (f.d - 2.3) / 2
       const z = front - (h === -1 ? (f.d - 2.3) * 0.75 : h === 1 ? d / 2 : d / 2)
-      return { center: sitting(cx, boxBottom, z, [boxW, boxH, d]), size: [boxW, boxH, d], spread: add(boxSpread, [0, 0, h * 15]) }
+      return { center: sitting(cx, boxBottom, z, [boxW, boxH, d]), size: [boxW, boxH, d], spread: add(boxSpread, [0, 0, h * 15]), axes: [0, 2, 1] }
     }
     if (/back panel/.test(file)) {
-      return { center: sitting(cx, boxBottom, front - f.d + 4, [boxW, boxH, 3]), size: [boxW, boxH, 3], spread: add(boxSpread, [0, 0, -30]) }
+      return { center: sitting(cx, boxBottom, front - f.d + 4, [boxW, boxH, 3]), size: [boxW, boxH, 3], spread: add(boxSpread, [0, 0, -30]), axes: rankAxes([sx, sy, sz]) }
     }
     if (/baseplate/.test(file)) {
       const h = half(file)
       const size: Vec3 = [sx, Math.min(sz, 4), h === 0 ? sy : sy]
       const z = h === 0 ? front - f.d / 2 : front - f.d / 2 + h * (sy / 2)
-      return { center: sitting(cx, boxBottom + 2, z, size), size, spread: add(boxSpread, [0, boxH + 25, 0]) }
+      return { center: sitting(cx, boxBottom + 2, z, size), size, spread: add(boxSpread, [0, boxH + 25, 0]), axes: [0, 2, 1] }
     }
     if (/facade cap/.test(file)) return small(path, [cx + f.w / 2 - 15, f.y0 + f.h / 2, front + 12], add(boxSpread, [0, 0, 80]), measure)
     if (/\/facades\/|xl facade/i.test(path)) {
@@ -187,26 +210,26 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
     if (/key/.test(file)) {
       const k = small(path, [0, 0, 0], [0, 0, 0], measure)
       const z = front - k.size[2] / 2 + (/part 2/.test(file) ? 14 : 8)
-      return { center: [cx, f.y0 + f.h / 2, z], size: k.size, spread: add(boxSpread, [0, 0, /part 2/.test(file) ? 110 : 90]) }
+      return { center: [cx, f.y0 + f.h / 2, z], size: k.size, spread: add(boxSpread, [0, 0, /part 2/.test(file) ? 110 : 90]), axes: k.axes }
     }
     if (/latch/.test(file)) {
       const size: Vec3 = [sx, sz, sy]
-      return { center: sitting(cx, f.y0 + 1, front - sy / 2 - 4, size), size, spread: [0, -35, f.d * 0.25] }
+      return { center: sitting(cx, f.y0 + 1, front - sy / 2 - 4, size), size, spread: [0, -35, f.d * 0.25], axes: [0, 2, 1] }
     }
     if (/springs/.test(file)) {
       const size: Vec3 = [sx, sz, sy]
-      return { center: sitting(cx, f.y0 + 1, front - sy - 50, size), size, spread: [0, -55, f.d * 0.1] }
+      return { center: sitting(cx, f.y0 + 1, front - sy - 50, size), size, spread: [0, -55, f.d * 0.1], axes: [0, 2, 1] }
     }
     if (/runner guide/.test(file)) {
       // Guides line the Module's sides: length along the depth, width up the side, thickness across.
       const size: Vec3 = [sz, sx, sy]
       const x = cx + sideOf(n) * (f.w / 2 - 2 - sz / 2)
-      return { center: sitting(x, boxBottom, front - sy / 2 - 1, size), size, spread: [sideOf(n) * 45, 0, 0] }
+      return { center: sitting(x, boxBottom, front - sy / 2 - 1, size), size, spread: [sideOf(n) * 45, 0, 0], axes: [2, 0, 1] }
     }
     if (/runner slide/.test(file)) {
       const size: Vec3 = [sz, sx, sy]
       const x = cx + sideOf(n) * (boxW / 2 + sz / 2)
-      return { center: sitting(x, boxBottom + 2, front - sy / 2 - 6, size), size, spread: add(boxSpread, [sideOf(n) * 25, 0, 0]) }
+      return { center: sitting(x, boxBottom + 2, front - sy / 2 - 6, size), size, spread: add(boxSpread, [sideOf(n) * 25, 0, 0]), axes: [2, 0, 1] }
     }
     if (/runner stopper/.test(file)) {
       return small(path, [cx + sideOf(n) * (f.w / 2 - 8), boxBottom + 10, front - f.d + 12], [sideOf(n) * 45, 0, -30], measure)
@@ -215,7 +238,7 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       // Geared rails: one under the Box and one over it, front to back.
       const size: Vec3 = [sz, sy, sx]
       const y = n % 2 === 0 ? boxBottom - sy : boxBottom + boxH
-      return { center: sitting(cx, y, front - sx / 2 - 10, size), size, spread: add(boxSpread, [0, n % 2 === 0 ? -20 : 20, 0]) }
+      return { center: sitting(cx, y, front - sx / 2 - 10, size), size, spread: add(boxSpread, [0, n % 2 === 0 ? -20 : 20, 0]), axes: [2, 1, 0] }
     }
   } else {
     // Sustainers: a Module open at the top, a lid (the Roof file) over it, a Facade on the front, hinges at the
@@ -228,7 +251,7 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       const h = half(file)
       const d = h === 0 ? f.d - 4 : (f.d - 4) / 2
       const z = h * d / 2
-      return { center: sitting(cx, f.y0 + modH, z, [f.w - 4, lidT, d]), size: [f.w - 4, lidT, d], spread: add(lidSpread, [0, 0, h * 15]) }
+      return { center: sitting(cx, f.y0 + modH, z, [f.w - 4, lidT, d]), size: [f.w - 4, lidT, d], spread: add(lidSpread, [0, 0, h * 15]), axes: [0, 2, 1] }
     }
     if (/connector/.test(file)) return small(path, [cx, f.y0 + modH + lidT, 0], add(lidSpread, [0, 25, 0]), measure)
     if (/facade/.test(file)) {
@@ -248,15 +271,16 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
   if (/wall mount second/.test(file)) return small(path, [cx, f.y0 + f.h / 2, -f.d / 2 - 30], [0, 0, -110], measure)
   if (/wall mount/.test(file)) {
     const size: Vec3 = ranked([sx, sy, sz])
-    return { center: [cx, f.y0 + f.h / 2, -f.d / 2 - size[2] / 2], size: [size[0], size[1], size[2]], spread: [0, 0, -60] }
+    return { center: [cx, f.y0 + f.h / 2, -f.d / 2 - size[2] / 2], size: [size[0], size[1], size[2]], spread: [0, 0, -60], axes: rankAxes([sx, sy, sz]) }
   }
   return loose(path, [cx, f.y0 + f.h, 0], measure)
 }
 
 /** A small part: its longest side across, the next up, the shortest front to back. */
 function small(path: string, center: Vec3, spread: Vec3, measure: (p: string) => Vec3): Placement {
-  const [a, b, c] = ranked(measure(path))
-  return { center, size: [a, b, c], spread }
+  const s = measure(path)
+  const [a, b, c] = ranked(s)
+  return { center, size: [a, b, c], spread, axes: rankAxes(s) }
 }
 
 /** A flat part facing forward, like a label: stored lying down as [width, height, thickness]. */
@@ -267,8 +291,9 @@ function flat(path: string, center: Vec3, spread: Vec3, measure: (p: string) => 
 
 /** A part with no known place: drawn just above where it belongs, so it's still counted and visible. */
 function loose(path: string, at: Vec3, measure: (p: string) => Vec3): Placement {
-  const size = ranked(measure(path))
-  return { center: [at[0], at[1] + size[1] / 2 + 20, at[2]], size, spread: [0, 60, 0] }
+  const s = measure(path)
+  const size = ranked(s)
+  return { center: [at[0], at[1] + size[1] / 2 + 20, at[2]], size, spread: [0, 60, 0], axes: rankAxes(s) }
 }
 
 type TowerGroup = 'roof' | 'bottom' | 'back'
@@ -287,17 +312,20 @@ function towerPart(path: string, f: Frame, n: number, qty: number, roofT: number
   const thick = (p: string) => minAreaRect(catalog.get(p).outline)[1]
   if (/roof insert/.test(file)) return small(path, [cx, top + 30, 0], [0, 140, 0], measure)
   if (/roof handle/.test(file)) {
-    const [a, b, c] = ranked(measure(path))
-    return { center: [cx, top + 40, 0], size: [a, c, b], spread: [0, 120, 0] }
+    const s = measure(path)
+    const [a, b, c] = ranked(s)
+    const r = rankAxes(s)
+    return { center: [cx, top + 40, 0], size: [a, c, b], spread: [0, 120, 0], axes: [r[0], r[2], r[1]] }
   }
   if (/top handle/.test(file)) {
-    const [a, b, c] = ranked(measure(path))
+    const s = measure(path)
+    const [a, b, c] = ranked(s)
     const x = f.x0 + ((n + 0.5) / qty) * f.w
-    return { center: [x, top + roofT + b / 2, 0], size: [a, b, c], spread: [0, 100, 0] }
+    return { center: [x, top + roofT + b / 2, 0], size: [a, b, c], spread: [0, 100, 0], axes: rankAxes(s) }
   }
   if (/roof/.test(file)) {
     const t = thick(path)
-    return { center: sitting(cx, top, 0, [f.w, t, f.d]), size: [f.w, t, f.d], spread: [0, 0, 0] }
+    return { center: sitting(cx, top, 0, [f.w, t, f.d]), size: [f.w, t, f.d], spread: [0, 0, 0], axes: [0, 2, 1] }
   }
   if (/\bbase\b/.test(file)) {
     const t = thick(path)
@@ -307,20 +335,25 @@ function towerPart(path: string, f: Frame, n: number, qty: number, roofT: number
   }
   if (/connector/.test(file)) return small(path, [cx, -10, 0], [0, -40, 0], measure)
   if (/feet/.test(file)) {
-    const [a, b, c] = ranked(measure(path))
+    const s = measure(path)
+    const [a, b, c] = ranked(s)
+    const r = rankAxes(s)
     const z = qty === 1 ? f.d / 2 - c / 2 : (n === 0 ? 1 : -1) * (f.d / 2 - c / 2)
-    return { center: [cx, -25 - c / 2, z], size: [a, c, b], spread: [0, -60, 0] }
+    return { center: [cx, -25 - c / 2, z], size: [a, c, b], spread: [0, -60, 0], axes: [r[0], r[2], r[1]] }
   }
   if (/disk|bushing|tyre|cover/.test(file)) {
     // Two wheels at the back corners, axle across.
-    const [a, , c] = ranked(measure(path))
+    const s = measure(path)
+    const [a, , c] = ranked(s)
+    const r = rankAxes(s)
     const order = ['tyre', 'disk', 'bushing', 'cover'].findIndex((k) => file.includes(k))
     const x = cx + sideOf(n) * (f.w / 2 + 6 + order * 6)
-    return { center: [x, -a / 2 - 10, -f.d / 2 + a / 2], size: [c, a, a], spread: [sideOf(n) * (30 + order * 25), -60, 0] }
+    return { center: [x, -a / 2 - 10, -f.d / 2 + a / 2], size: [c, a, a], spread: [sideOf(n) * (30 + order * 25), -60, 0], axes: [r[2], r[0], r[1]] }
   }
   if (/stationary handle|pull-out handle\b|pull-out handle$/.test(file)) {
-    const [a, b, c] = ranked(measure(path))
-    return { center: [cx, top - b / 2, -f.d / 2 - 33 - c / 2], size: [a, b, c], spread: [0, 40, -80] }
+    const s = measure(path)
+    const [a, b, c] = ranked(s)
+    return { center: [cx, top - b / 2, -f.d / 2 - 33 - c / 2], size: [a, b, c], spread: [0, 40, -80], axes: rankAxes(s) }
   }
   if (/handle lock knob/.test(file)) return small(path, [cx + sideOf(n) * 40, top - 60, -f.d / 2 - 40], [sideOf(n) * 20, 0, -110], measure)
   if (/handle lock/.test(file)) return small(path, [cx + (qty > 1 ? sideOf(n) * 40 : 0), top - 60, -f.d / 2 - 36], [0, 0, -95], measure)

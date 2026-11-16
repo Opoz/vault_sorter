@@ -21,6 +21,16 @@ describe('filesSource (folder input, for Firefox)', () => {
     expect(await (await source.readFile('01. DRAWERS/07. Universal/Latch.stl')).text()).toBe('latch')
   })
 
+  it("isn't thrown off by the zip's __MACOSX folder, which repeats the folder names deeper down", async () => {
+    // As unzipped on Windows: __MACOSX sorts first and holds "._" copies under a deeper "01. DRAWERS".
+    const source = filesSource([
+      file('261021_VAULT_USSA_S/__MACOSX/261021_VAULT_USSA_S/01. DRAWERS/07. Universal/._Latch.stl', 'mac junk'),
+      file('261021_VAULT_USSA_S/261021_VAULT_USSA_S/01. DRAWERS/07. Universal/Latch.stl', 'latch'),
+    ])
+    expect(await (await source.readFile('01. DRAWERS/07. Universal/Latch.stl')).text()).toBe('latch')
+    expect(source.name).toBe('261021_VAULT_USSA_S')
+  })
+
   it('refuses a folder that is not the Vault download', () => {
     expect(() => filesSource([file('Photos/cat.jpg')])).toThrow(/Vault download/)
   })

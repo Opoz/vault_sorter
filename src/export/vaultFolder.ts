@@ -125,7 +125,8 @@ export function folderSource(root: VaultFolder): VaultSource {
  */
 export function filesSource(files: FileList | readonly File[]): VaultSource {
   const list = [...files] as (File & { webkitRelativePath: string })[]
-  const marker = list.map((f) => f.webkitRelativePath.split('/')).find((parts) => parts.includes(MARKER))
+  // The zip's __MACOSX folder repeats the folder names one level deeper, so it's skipped when finding the download.
+  const marker = list.map((f) => f.webkitRelativePath.split('/')).find((parts) => parts.includes(MARKER) && !parts.includes('__MACOSX'))
   if (!marker) throw new Error(`That folder isn't the Vault download: it has no "${MARKER}" folder inside.`)
   const depth = marker.indexOf(MARKER)
   const byPath = new Map<string, File>()

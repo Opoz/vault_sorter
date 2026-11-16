@@ -1,6 +1,7 @@
 /**
  * The 3D view of a Layout's Towers, assembled or pulled apart (issue #9). View only: editing stays on the 2D
- * drawing and in the inspector. Parts are plain boxes at their measured size for now.
+ * drawing and in the inspector. Parts are plain boxes at their measured size until the user's Vault folder is
+ * chosen; then each real part replaces its box as it loads.
  */
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -8,8 +9,10 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { Colours, EditorTower } from '../editor/layoutOps'
 import type { Depth } from '../engine/model'
-import { assembleTower, emptySpaces, explodedCenter, type ScenePart, type Vec3 } from '../scene/assembly'
+import { assembleTower, emptySpaces, explodedCenter, turnMatrix, type Axes, type ScenePart, type Vec3 } from '../scene/assembly'
+import { loadGeometry } from '../scene/meshCache'
 import { catalog, type Printer } from './data'
+import { useVaultFolder } from './useVaultFolder'
 
 /** Space between Towers standing side by side, in mm. */
 const TOWER_GAP_MM = 160
@@ -96,6 +99,35 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
     return { target: box.getCenter(new THREE.Vector3()), distance: (radius / Math.sin((FOV / 2) * (Math.PI / 180))) * (focus ? 1.5 : 0.8) }
   }, [placed, focus])
 
+  // Real parts from the Vault folder, by file, as they load.
+  const vault = useVaultFolder()
+  const [meshes, setMeshes] = useState<{ source?: string; byPath: ReadonlyMap<string, THREE.BufferGeometry>; failed: number }>(
+    { byPath: new Map(), failed: 0 })
+  const paths = useMemo(() => [...new Set(placed.parts.map((p) => p.path))].sort().join('\n'), [placed])
+  useEffect(() => {
+    if (vault.folder.kind !== 'ready') return
+    const source = vault.folder.source
+    let live = true
+    for (const path of paths ? paths.split('\n') : []) {
+      loadGeometry(source, path).then(
+        (g) => live && setMeshes((m) => {
+          const fresh = m.source !== source.name
+          const byPath = new Map(fresh ? [] : m.byPath)
+          byPath.set(path, g)
+          return { source: source.name, byPath, failed: fresh ? 0 : m.failed }
+        }),
+        (err: unknown) => {
+          if (!live) return
+          console.warn(`3D view: couldn't load ${path}:`, err)
+          setMeshes((m) => ({ source: source.name, byPath: m.source === source.name ? m.byPath : new Map(), failed: (m.source === source.name ? m.failed : 0) + 1 }))
+        },
+      )
+    }
+    return () => { live = false }
+  }, [vault.folder, paths])
+  const ready = vault.folder.kind === 'ready' && meshes.source === vault.folder.source.name ? meshes : undefined
+  const total = paths ? paths.split('\n').length : 0
+
   const floorY = placed.bounds.isEmpty() ? 0 : placed.bounds.min.y
   // The picked part's copies within its owner (both runners of a drawer, say).
   const isPicked = (p: Placed['parts'][number]) =>
@@ -120,6 +152,8 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
               key={p.key}
               center={[c[0] + p.offset, c[1], c[2]]}
               size={p.size}
+              axes={p.axes}
+              geometry={ready?.byPath.get(p.path)}
               colour={colours[p.role]}
               faded={focus !== undefined && p.unitId !== focus}
               picked={isPicked(p)}
@@ -144,7 +178,28 @@ export default function TowerScene({ towers, colours, printer, splitParts, focus
         </label>
         <button type="button" onClick={() => setResetKey((k) => k + 1)}>Reset view</button>
       </div>
-      <p className="scene3d-note">Parts are shown as plain boxes. Choose your Vault folder to see the real parts.</p>
+      <div className="scene3d-note">
+        {vault.folder.kind === 'ready' ? (
+          <>
+            {(ready?.byPath.size ?? 0) + (ready?.failed ?? 0) < total && <p>Loading the real parts: {ready?.byPath.size ?? 0} of {total}…</p>}
+            {(ready?.failed ?? 0) > 0 && <p>{ready!.failed} part file(s) couldn't be read from {vault.folder.source.name}, so they stay as boxes.</p>}
+            <p className="small">Real parts are placed by best guess for now; they're being checked against the manual.</p>
+          </>
+        ) : vault.folder.kind === 'needs-permission' ? (
+          <p>
+            Parts are shown as plain boxes.{' '}
+            <button type="button" className="link" onClick={() => { if (vault.folder.kind === 'needs-permission') vault.allow(vault.folder.folder).catch(() => {}) }}>
+              Allow reading {vault.folder.folder.name}
+            </button>{' '}to see the real parts.
+          </p>
+        ) : vault.folder.kind === 'none' ? (
+          <p>
+            Parts are shown as plain boxes.{' '}
+            <button type="button" className="link" onClick={() => vault.pick().catch(() => {})}>Choose your Vault folder</button>{' '}
+            to see the real parts. Nothing is uploaded.
+          </p>
+        ) : null}
+      </div>
       {picked && placed.parts.some(isPicked) && <p className="scene3d-picked">{partLabel(picked.path)}</p>}
     </div>
   )
@@ -162,10 +217,47 @@ const partLabel = (path: string) => path.split('/').pop()!.replace(/\.stl$/i, ''
 
 const PICKED_COLOUR = '#2f6feb'
 
-function PartBox({ center, size, colour, faded, picked, onClick, onHover }: {
-  center: Vec3; size: Vec3; colour: string; faded: boolean; picked: boolean
+/** The turn from a file's stored axes to how the part sits, as a quaternion. */
+const turnOf = (axes: Axes) => {
+  const m = turnMatrix(axes)
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(m[0], m[1], m[2], 0, m[3], m[4], m[5], 0, m[6], m[7], m[8], 0, 0, 0, 0, 1))
+}
+
+/** A part: the real mesh when it has loaded, turned into place, otherwise a box at its measured size. */
+function PartBox({ center, size, axes, geometry, colour, faded, picked, onClick, onHover }: {
+  center: Vec3; size: Vec3; axes: Axes; geometry?: THREE.BufferGeometry; colour: string; faded: boolean; picked: boolean
   onClick: (e: ThreeEvent<MouseEvent>) => void; onHover: (over: boolean) => void
 }) {
+  const turn = useMemo(() => turnOf(axes), [axes])
+  const material = (
+    <meshStandardMaterial
+      key={`${faded ? 'faded' : 'solid'}-${geometry ? 'mesh' : 'box'}`}
+      color={colour} roughness={0.75} transparent={faded} opacity={faded ? 0.07 : 1} depthWrite={!faded}
+      emissive={picked ? PICKED_COLOUR : '#000000'} emissiveIntensity={picked ? 0.45 : 0}
+      flatShading={!!geometry} side={geometry ? THREE.DoubleSide : THREE.FrontSide}
+    />
+  )
+  if (geometry) {
+    return (
+      <group position={center}>
+        <mesh
+          geometry={geometry}
+          quaternion={turn}
+          userData={{ focused: !faded }}
+          onClick={onClick}
+          onPointerOver={(e) => { e.stopPropagation(); onHover(true) }}
+          onPointerOut={() => onHover(false)}
+        >
+          {material}
+        </mesh>
+        {picked && (
+          <lineSegments geometry={CUBE_EDGES} scale={size} renderOrder={10}>
+            <lineBasicMaterial color={PICKED_COLOUR} depthTest={false} transparent />
+          </lineSegments>
+        )}
+      </group>
+    )
+  }
   return (
     <group position={center} scale={size}>
       <mesh
@@ -175,12 +267,8 @@ function PartBox({ center, size, colour, faded, picked, onClick, onHover }: {
         onPointerOver={(e) => { e.stopPropagation(); onHover(true) }}
         onPointerOut={() => onHover(false)}
       >
-        {/* A new material when fading changes: three.js doesn't pick up a change to `transparent` on its own. */}
-        <meshStandardMaterial
-          key={faded ? 'faded' : 'solid'}
-          color={colour} roughness={0.75} transparent={faded} opacity={faded ? 0.07 : 1} depthWrite={!faded}
-          emissive={picked ? PICKED_COLOUR : '#000000'} emissiveIntensity={picked ? 0.45 : 0}
-        />
+        {/* A new material when fading changes (its key): three.js doesn't pick up a change to `transparent` on its own. */}
+        {material}
       </mesh>
       {/* The picked part's outline shows through whatever is in front of it. */}
       <lineSegments geometry={CUBE_EDGES} renderOrder={picked ? 10 : 0}>

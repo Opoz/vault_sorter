@@ -441,7 +441,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .scene3d-controls { position: absolute; left: 50%; bottom: 0.9rem; transform: translateX(-50%); display: flex; gap: 0.75rem; align-items: center; padding: 0.4rem 0.75rem; border-radius: 999px; background: var(--panel); box-shadow: 0 1px 4px rgb(36 39 42 / 0.2); font-size: 0.85rem; }
 .scene3d-spread { display: flex; gap: 0.5rem; align-items: center; }
 .scene3d-spread input { width: min(14rem, 40vw); }
-.scene3d-note { position: absolute; left: 0.75rem; top: 0.75rem; margin: 0; max-width: 18rem; font-size: 0.8rem; color: var(--ink-soft); }
+.scene3d-note { position: absolute; left: 0.75rem; top: 0.75rem; max-width: 18rem; font-size: 0.8rem; color: var(--ink-soft); }
+.scene3d-note p { margin: 0 0 0.3rem; }
 .scene3d-loading { margin: auto; color: var(--ink-soft); }
 
 /* The part picked in the 3D view: its name over the view, and its line in the parts list. */
