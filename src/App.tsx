@@ -114,10 +114,13 @@ export default function App() {
     useSensor(KeyboardSensor),
   )
 
-  const info = useMemo(() => towerInfo(layout, printer), [layout, printer])
+  // Keyed on what the towers' info reads, not the whole layout, so renaming the layout doesn't recompute it (each
+  // tower's depth options, parts and plates) on every keystroke.
+  const { towers, splitParts } = layout
+  const info = useMemo(() => towerInfo(towers, splitParts, printer), [towers, splitParts, printer])
   // Incomplete towers: whether the units placed so far fit, so a misfit shows before the last gap is filled.
-  const partial = useMemo(() => new Map(layout.towers.filter((t) => !info.get(t.id)?.choice)
-    .flatMap((t) => { const why = partialFit(t, printer, layout.splitParts); return why ? [[t.id, why] as const] : [] })), [layout, printer, info])
+  const partial = useMemo(() => new Map(towers.filter((t) => !info.get(t.id)?.choice)
+    .flatMap((t) => { const why = partialFit(t, printer, splitParts); return why ? [[t.id, why] as const] : [] })), [towers, splitParts, printer, info])
   const paletteFit = useMemo(() => unitFitByPrinter(printer, layout.splitParts), [printer, layout.splitParts])
   const { ref: canvasRef, scale } = useCanvasScale(layout)
   const [dropNotice, setDropNotice] = useState<DropNotice | null>(null)
@@ -130,7 +133,7 @@ export default function App() {
     setViewState(v)
     try { window.localStorage.setItem(VIEW_KEY, v) } catch { /* a convenience only */ }
   }
-  const sceneTowers = useMemo(() => layout.towers.map((tower) => ({ tower, depth: info.get(tower.id)?.depth ?? tower.depth ?? 4 })), [layout.towers, info])
+  const sceneTowers = useMemo(() => towers.map((tower) => ({ tower, depth: info.get(tower.id)?.depth ?? tower.depth ?? 4 })), [towers, info])
 
   // Opening a share link (#share=…), on load or pasted into a tab already open: import it once, then take it out
   // of the address so a reload doesn't import it again.
@@ -436,10 +439,10 @@ function Trash({ canvas }: { canvas: HTMLElement | null }) {
 }
 const TRASH_SIZE_PX = 128
 
-function towerInfo(layout: EditorLayout, printer: Editor['printer']): Map<string, TowerInfo> {
+function towerInfo(towers: EditorLayout['towers'], splitParts: EditorLayout['splitParts'], printer: Editor['printer']): Map<string, TowerInfo> {
   const map = new Map<string, TowerInfo>()
-  const options = { catalog, printer, splitParts: layout.splitParts }
-  for (const tower of layout.towers) {
+  const options = { catalog, printer, splitParts }
+  for (const tower of towers) {
     const probe = toEngineTower(tower, 3)
     if (!probe) {
       map.set(tower.id, {})
