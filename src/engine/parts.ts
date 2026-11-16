@@ -11,7 +11,8 @@ export type ColourRole = 'body' | 'accent' | 'secondary'
 
 /** Why a line can't be taken purely at face value. Shown to the user with its source. */
 export interface Flag {
-  readonly kind: 'inferred' | 'conflict'
+  /** `warning`: something about the layout itself worth checking, not a doubt about the manuals. */
+  readonly kind: 'inferred' | 'conflict' | 'warning'
   readonly note: string
   /** Manual and page, or the evidence used, e.g. "Drawer Assembly p2". */
   readonly source: string

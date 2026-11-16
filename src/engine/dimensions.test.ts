@@ -52,4 +52,20 @@ describe('towerDimensions', () => {
 
     expect(towerDimensions(split, opts).heightMm).toBeCloseTo(towerDimensions(stacked, opts).heightMm, 6)
   })
+
+  // Issue #17: a Sustainer stacks at its own height, a 1F one 12.7 mm taller than a 1F drawer (60.7 against 48).
+  const sustainer = (width: Unit['width']): Unit => ({ kind: 'sustainer', width, moduleType: 'flat' })
+  it('counts a 1F sustainer 12.7 mm taller than a 1F drawer', () => {
+    const drawers = towerDimensions(tower({ rows: rows('S', '1F', '1F') }), opts).heightMm
+    const withSustainer = towerDimensions(tower({ rows: [...rows('S', '1F'), { height: '1F', units: [sustainer('S')] }] }), opts).heightMm
+    expect(withSustainer - drawers).toBeCloseTo(12.7, 1)
+  })
+
+  it('warns when the columns of a split row end at different heights', () => {
+    const split = (units: Unit[][]) => towerDimensions(tower({
+      width: 'L', rows: [{ columns: units.map((u) => ({ width: 'S' as const, units: u.map((x) => ({ ...x, height: '1F' as const })) })) }],
+    }), opts).flags.filter((f) => f.kind === 'warning')
+    expect(split([[drawer('S')], [drawer('S')]])).toEqual([])
+    expect(split([[drawer('S')], [sustainer('S')]])).toEqual([expect.objectContaining({ note: expect.stringMatching(/12\.7 mm apart/) })])
+  })
 })

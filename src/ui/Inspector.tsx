@@ -500,7 +500,7 @@ function Flags({ flags }: { flags: readonly Flag[] }) {
     <>
       {flags.map((f) => (
         <span key={f.note} className={`flag flag-${f.kind}`}>
-          {f.kind === 'conflict' ? 'Manuals disagree: ' : 'Inferred: '}{f.note} <cite>{f.source}</cite>
+          {f.kind === 'conflict' ? 'Manuals disagree: ' : f.kind === 'warning' ? 'Check: ' : 'Inferred: '}{f.note} <cite>{f.source}</cite>
         </span>
       ))}
     </>

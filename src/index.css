@@ -384,6 +384,7 @@ select, input:not([type='checkbox']):not([type='radio']):not([type='color']) {
 .line-source { display: block; font-style: normal; font-size: 0.74rem; color: var(--ink-soft); }
 .flag { display: block; margin-top: 0.15rem; font-size: 0.78rem; color: #6d4a0f; }
 .flag-conflict { color: var(--bad); }
+.flag-warning { color: var(--bad); font-weight: 600; }
 .flag cite { font-style: normal; color: var(--ink-soft); }
 
 .export .folder-line strong { font-weight: 600; }

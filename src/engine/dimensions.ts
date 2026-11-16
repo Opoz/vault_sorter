@@ -3,7 +3,7 @@
  * overlap is not visible in the files, so anything that depends on it is flagged as inferred.
  */
 import type { PartMeasure, Point } from './catalog'
-import { rowFloors, unitsOf, type Tower, type Width } from './model'
+import { columnsOf, FLOORS, rowFloors, unitsOf, type Height, type StackedUnit, type Tower, type Width } from './model'
 import { partsForTower, type Flag, type PartsOptions } from './parts'
 
 // Measured from the Module files (scripts/measure): every module of a width is the same width, every module
@@ -12,6 +12,29 @@ export const MODULE_WIDTH_MM: Record<Width, number> = { S: 164.8, M: 254.0, L: 3
 export const moduleDepthMm = (depth: number) => 20.1 + 42 * depth
 export const FLOOR_PITCH_MM = 48
 export const LIP_MM = 9.01
+
+/**
+ * How tall a Sustainer stacks, from its Module's body to the top of its lid plus the 1 mm drawers leave between
+ * floors (issue #17): the Module bodies are 45.8 / 79.8 / 175.8 mm (each Module has 5 mm feet, like a drawer's)
+ * and every height shares one lid whose top is 13.9 mm above the rim. A 2F or 4F Sustainer fits its floors to
+ * within 1.3 mm; a 1F one is 12.7 mm taller than a floor.
+ */
+export const SUSTAINER_HEIGHT_MM: Record<Height, number> = { '1F': 60.7, '2F': 94.7, '4F': 190.7 }
+
+/** How tall a Unit really stacks: a drawer 48 mm a floor, a Sustainer its own height. */
+export const unitHeightMm = (unit: Pick<StackedUnit, 'kind' | 'height'>) =>
+  unit.kind === 'sustainer' ? SUSTAINER_HEIGHT_MM[unit.height] : FLOORS[unit.height] * FLOOR_PITCH_MM
+
+/** How far apart a split Row's Columns may end, in mm, before it's worth a warning. */
+const COLUMN_MISMATCH_MM = 3
+
+/** Each Column's real height in a Row (empty floors below a Unit count 48 mm each). */
+function columnHeightsMm(row: Tower['rows'][number]): number[] {
+  return columnsOf(row).map((c) => c.units.reduce((mm, u) => mm + ((u as { gapBelow?: number }).gapBelow ?? 0) * FLOOR_PITCH_MM + unitHeightMm(u), 0))
+}
+
+/** A Row's real height: its tallest Column. */
+export const rowHeightMm = (row: Tower['rows'][number]) => Math.max(0, ...columnHeightsMm(row))
 
 export interface TowerDimensions {
   readonly widthMm: number
@@ -31,7 +54,8 @@ export function towerDimensions(tower: Tower, options: PartsOptions): TowerDimen
   if (base) breakdown.push({ label: 'Base', mm: thickness(options.catalog.get(base.path)) })
 
   const floors = tower.rows.reduce((n, r) => n + rowFloors(r), 0)
-  if (floors > 0) breakdown.push({ label: 'Modules', mm: floors * FLOOR_PITCH_MM + LIP_MM })
+  const modulesMm = tower.rows.reduce((mm, r) => mm + rowHeightMm(r), 0)
+  if (floors > 0) breakdown.push({ label: 'Modules', mm: modulesMm + LIP_MM })
   if (tower.rows.length > 1 || tower.rows.some((r) => unitsOf(r).length > 2)) {
     flags.push({
       kind: 'inferred',
@@ -42,10 +66,22 @@ export function towerDimensions(tower: Tower, options: PartsOptions): TowerDimen
   if (tower.rows.some((r) => unitsOf(r).some((u) => u.kind === 'sustainer'))) {
     flags.push({
       kind: 'inferred',
-      note: "Sustainers are assumed to stack to the same height per floor as drawers; their module and lid don't add up to it directly.",
-      source: 'Module and lid measurements; Instructions Manual p8 (sustainers and drawers stack)',
+      note: 'Sustainers are counted at their own height (a 1F one is 12.7 mm taller than a floor), worked out from the Module and lid sizes; not yet checked on a real stack.',
+      source: 'Module, Facade and lid measurements (issue #17)',
     })
   }
+  tower.rows.forEach((row, i) => {
+    const heights = columnHeightsMm(row)
+    if (heights.length < 2) return
+    const spread = Math.max(...heights) - Math.min(...heights)
+    if (spread > COLUMN_MISMATCH_MM) {
+      flags.push({
+        kind: 'warning',
+        note: `Row ${i + 1}'s columns end ${spread.toFixed(1)} mm apart, so what sits on them won't be level (a 1F sustainer stands 12.7 mm taller than a 1F drawer).`,
+        source: 'Sustainer heights (issue #17)',
+      })
+    }
+  })
 
   const roof = lines.find((l) => /^01\. DRAWERS\/.*\/Roofs?\/[^/]+$/i.test(l.path))
   if (roof) {

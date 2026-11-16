@@ -9,7 +9,7 @@
  * see POSE_SOURCE.
  */
 import type { Catalog, Point } from '../engine/catalog'
-import { MODULE_WIDTH_MM, moduleDepthMm, FLOOR_PITCH_MM, minAreaRect } from '../engine/dimensions'
+import { MODULE_WIDTH_MM, moduleDepthMm, FLOOR_PITCH_MM, minAreaRect, unitHeightMm } from '../engine/dimensions'
 import { FLOORS, type Depth, type Height, type Width } from '../engine/model'
 import { partsForTower, type ColourRole, type PartLine, type PartsOptions } from '../engine/parts'
 import { rowFloors, unitStarts, type EditorStackedUnit, type EditorTower } from '../editor/layoutOps'
@@ -105,13 +105,17 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
     rowBottoms.push(rowBottom)
     topRowStart = parts.length
     const sides = columnSides(width, row.columns.map((c) => c.width), row.soloSide)
+    // Units stack at their real heights (a 1F sustainer is 12.7 mm taller than a floor; issue #17), so a Row is as
+    // tall as its tallest Column.
+    let rowTop = 0
     row.columns.forEach((column, ci) => {
-      const starts = unitStarts(column.units)
+      const starts = unitStartsMm(column.units)
       column.units.forEach((unit, ui) => {
         const frame: Frame = {
           x0: sides[ci], w: MODULE_WIDTH_MM[unit.width], d: towerD,
-          y0: rowBottom + starts[ui] * FLOOR_PITCH_MM, h: floorsOf(unit.height) * FLOOR_PITCH_MM,
+          y0: rowBottom + starts[ui], h: unitHeightMm(unit),
         }
+        rowTop = Math.max(rowTop, starts[ui] + unitHeightMm(unit))
         // Units spread apart in proportion to how high they sit, and Columns of a split Row apart sideways.
         const sideways = row.columns.length > 1 || MODULE_WIDTH_MM[column.width] < towerW ? (frame.x0 + frame.w / 2 < 0 ? -40 : 40) : 0
         const groupSpread: Vec3 = [sideways, frame.y0 * UNIT_LIFT, 0]
@@ -120,7 +124,7 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
         }
       })
     })
-    rowBottom += rowFloors(row) * FLOOR_PITCH_MM
+    rowBottom += rowTop
   }
   const top = rowBottom
   const towerFrame: Frame = { x0: -towerW / 2, w: towerW, d: towerD, y0: 0, h: top }
@@ -181,6 +185,18 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
 
 /** How thick a backbone piece is, front to back (measured). */
 const BACKBONE_T = 33
+
+/** Where each Unit of a Column starts, in mm up from the Row's bottom: empty floors below count 48 mm each. */
+function unitStartsMm(units: readonly EditorStackedUnit[]): number[] {
+  const floors = unitStarts(units)
+  let y = 0
+  return units.map((u, i) => {
+    const gap = floors[i] - (i === 0 ? 0 : floors[i - 1] + floorsOf(units[i - 1].height))
+    const start = y + gap * FLOOR_PITCH_MM
+    y = start + unitHeightMm(u)
+    return start
+  })
+}
 
 /** How far apart Units spread, per mm of height below them. */
 const UNIT_LIFT = 0.35
@@ -427,12 +443,14 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
     // at the back and locks at the front (Instructions Manual pp12 and 17; there's no assembly manual for them, so
     // the turns below are read from the files and those two pictures, inferred).
     // The Module is stored like a drawer's: upside down, its closed back wall on the file's −z, open front on +z.
-    // Module heights are the same at every width and depth (measured on S3, M5 and L4).
+    // Module heights are the same at every width and depth (measured on S3, M5 and L4). Like a drawer's, the Module
+    // stands on 5 mm feet that reach down into the unit below, its body starting 0.5 mm above the floor line.
     const moduleH = { '1F': 50.8, '2F': 84.8, '4F': 180.8 }[unit.height]
-    const top = f.y0 + moduleH
+    const feetBottom = f.y0 + 0.5 - 5
+    const top = feetBottom + moduleH
     const lidSpread: Vec3 = [0, 70, 0]
     const facadeT = 10
-    if (/\bmodule\b/.test(file)) return { center: sitting(cx, f.y0, 0, [f.w, sy, f.d]), size: [f.w, sy, f.d], spread: [0, 0, 0], axes: ['-x', '-y', '+z'], checked: SUSTAINER_CHECK }
+    if (/\bmodule\b/.test(file)) return { center: sitting(cx, feetBottom, 0, [f.w, sy, f.d]), size: [f.w, sy, f.d], spread: [0, 0, 0], axes: ['-x', '-y', '+z'], checked: SUSTAINER_CHECK }
     if (/\broof\b/.test(file)) {
       // The lid stands on end on the bed, turned: its top on the file's +x once squared up, its hollow underside
       // on −x, the corner bosses for the hinges at the back (−z) and the tab the lock catches at the front (+z).

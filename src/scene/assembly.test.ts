@@ -56,10 +56,10 @@ describe('assembleTower', () => {
       // The base's 5 mm clips reach up into the bottom Module's feet; its top surface meets the Module's body.
       expect(boxBottom(m) + 0.5).toBeGreaterThanOrEqual(boxTop(base) - 5 - 0.01)
     }
-    // 1F + 3F of rows below (4 floors of 48 mm), then the top Row's 2F sustainer, which stands taller than its two
-    // floors: its 84.8 mm Module and the lid's top surface 13.9 mm above it. The roof sits on that, the lid's tabs
-    // reaching up into it.
-    expect(boxBottom(roof)).toBeCloseTo(4 * 48 + 84.8 + 13.9)
+    // Real heights (issue #17): the 1F drawer Row (48 mm), the split Row as tall as its taller Column, a 1F
+    // sustainer (60.7) under a 2F drawer (96), then the top Row's 2F sustainer: its Module (84.8 mm, its feet
+    // 4.5 mm below the floor line) and the lid's top surface 13.9 mm above the rim. The roof sits on that.
+    expect(boxBottom(roof)).toBeCloseTo(48 + 60.7 + 96 - 4.5 + 84.8 + 13.9)
   })
 
   it('places the columns of a split row side by side, left first', () => {
