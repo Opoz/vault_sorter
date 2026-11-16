@@ -158,7 +158,7 @@ export function assembleTower(tower: EditorTower, depth: Depth, options: Assembl
         parts.push({
           key: `tower:${ri}:${line.path}:${n}`, path: line.path, role: line.role,
           center: [0, at + h / 2, z], size: [w, h, t],
-          groupSpread: [0, (at + h / 2) * UNIT_LIFT, -60], partSpread: [0, 0, pegboard ? -120 : -50], axes: STORED,
+          groupSpread: [0, (at + h / 2) * UNIT_LIFT, -60], partSpread: [0, 0, pegboard ? -120 : -50], axes: STORED, checked: BACK_CHECK,
         })
         if (pegboard) pegY += h
         else y += h
@@ -232,6 +232,7 @@ const OUTER_BOLT: Partial<Record<Width, number>> = { M: 92, L: 130, XL: 170 }
 /** Sustainer poses read from the files, matched to the pictures and confirmed by the user (no assembly manual). */
 const SUSTAINER_CHECK = 'Instructions Manual pp12 and 17, with the user'
 /** Sustainer hinges, checked with the user against a product render as well. */
+const BACK_CHECK = 'Modifications pp7–15, with the user'
 const BASE_CHECK = 'Modifications pp2–6, with the user'
 const HINGE_CHECK = 'Instructions Manual pp12 and 17 and a product render, with the user'
 /** How far either side of a sustainer Module's middle its hinges are (measured on the back-wall pads). */
@@ -294,7 +295,8 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
     }
     if (/baseplate/.test(file)) {
       const h = half(file)
-      const size: Vec3 = [sx, Math.min(sz, 4), h === 0 ? sy : sy]
+      // Most are 4 mm plates; the L ones are 25.9 mm deep grids, so each keeps its own height on the Box floor.
+      const size: Vec3 = [sx, sz, sy]
       const z = h === 0 ? front - f.d / 2 : front - f.d / 2 + h * (sy / 2)
       return { center: sitting(cx, boxBottom + 2, z, size), size, spread: add(boxSpread, [0, boxH + 25, 0]), axes: along(0, 2, 1) }
     }
@@ -390,7 +392,7 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
     }
     if (/runner stopper/.test(file)) {
       // Pushed into the slot in each side of the Module once the Box is in (Drawer Assembly p8). The slot's centre
-      // is 28.5 mm in front of the Module's middle at every depth and width (measured on S3–S7, M5 and L4).
+      // is 28.5 mm in front of the Module's middle at every depth and width (measured on S3–S7, M5, L4, XL4 and XL7).
       // Taller Modules have a slot per floor; a single Box's stoppers are taken to use the lowest, level with its
       // runners (inferred).
       // Its length (17.9 mm) runs front to back along the slot, with the file's middle-length side facing into
@@ -671,7 +673,7 @@ function towerPart(path: string, f: Frame, n: number, qty: number, roofT: number
     // Stored as seen from behind, its feet (the file's +z) bolted to the back of a backbone piece from inside, the
     // grip out behind (Modifications p12); its height is set once the backbone pieces are placed.
     const [sx, sy, sz] = measure(path)
-    return { center: [cx, top - sy / 2, backboneOut - sz / 2], size: [sx, sy, sz], spread: [0, 40, -80], axes: STORED }
+    return { center: [cx, top - sy / 2, backboneOut - sz / 2], size: [sx, sy, sz], spread: [0, 40, -80], axes: STORED, checked: BACK_CHECK }
   }
   if (/pull-out handle lock part 2/.test(file)) return small(path, [cx, top - FLOOR_PITCH_MM / 2, -f.d / 2 - 35 - 8], [0, 30, -100], measure)
   // The lock is the top backbone piece, 47 mm tall like a 1F one, on the top floor; the rods run from the handle down
@@ -681,7 +683,7 @@ function towerPart(path: string, f: Frame, n: number, qty: number, roofT: number
   const lockT = 35
   if (/pull-out handle lock/.test(file)) {
     const [sx, sy, sz] = measure(path)
-    return { center: [cx, lockY, -f.d / 2 - lockT / 2], size: [sx, sz, sy], spread: [0, 30, -90], axes: ['+x', '+z', '-y'] }
+    return { center: [cx, lockY, -f.d / 2 - lockT / 2], size: [sx, sz, sy], spread: [0, 30, -90], axes: ['+x', '+z', '-y'], checked: BACK_CHECK }
   }
   if (/handle lock knob/.test(file)) {
     const part2 = /part 2/.test(file)
@@ -692,7 +694,7 @@ function towerPart(path: string, f: Frame, n: number, qty: number, roofT: number
     // On top of the telescoping rods, pushed down onto the lock (Modifications p14): stored as seen from behind,
     // turned a quarter-turn forward so its 61.5 mm stands up (the user).
     const [sx, sy, sz] = measure(path)
-    return { center: [cx, lockY + 47 / 2 + sz / 2, rodZ], size: [sx, sz, sy], spread: [0, 120, -60], axes: ['+x', '-z', '+y'] }
+    return { center: [cx, lockY + 47 / 2 + sz / 2, rodZ], size: [sx, sz, sy], spread: [0, 120, -60], axes: ['+x', '-z', '+y'], checked: BACK_CHECK }
   }
   return loose(path, [cx, top, 0], measure)
 }
