@@ -429,3 +429,17 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .empty-space { background: repeating-linear-gradient(45deg, transparent 0 6px, rgb(183 121 31 / 0.12) 6px 12px); }
 /* A lone Column on the right: its empty slot comes first. */
 .tower-row.is-solo-right { flex-direction: row-reverse; justify-content: flex-end; }
+
+/* 2D / 3D switch, top right of the canvas. */
+.view-toggle { position: absolute; top: 0.75rem; right: 0.75rem; z-index: 3; display: flex; border-radius: var(--radius-control); overflow: hidden; box-shadow: 0 0 0 1px rgb(36 39 42 / 0.2); background: var(--panel); }
+.view-toggle button { border: 0; border-radius: 0; padding: 0.3rem 0.7rem; background: transparent; font-size: 0.85rem; cursor: pointer; }
+.view-toggle button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+/* The 3D view fills the canvas. */
+.canvas-3d { padding: 0; background-image: none; }
+.scene3d { position: relative; flex: 1; min-height: 420px; }
+.scene3d > div:first-child { position: absolute !important; inset: 0; }
+.scene3d-controls { position: absolute; left: 50%; bottom: 0.9rem; transform: translateX(-50%); display: flex; gap: 0.75rem; align-items: center; padding: 0.4rem 0.75rem; border-radius: 999px; background: var(--panel); box-shadow: 0 1px 4px rgb(36 39 42 / 0.2); font-size: 0.85rem; }
+.scene3d-spread { display: flex; gap: 0.5rem; align-items: center; }
+.scene3d-spread input { width: min(14rem, 40vw); }
+.scene3d-note { position: absolute; left: 0.75rem; top: 0.75rem; margin: 0; max-width: 18rem; font-size: 0.8rem; color: var(--ink-soft); }
+.scene3d-loading { margin: auto; color: var(--ink-soft); }

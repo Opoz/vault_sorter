@@ -2,7 +2,7 @@ import {
   DndContext, DragOverlay, KeyboardSensor, MeasuringStrategy, PointerSensor, pointerWithin, useDroppable, useSensor,
   useSensors, type CollisionDetection, type DragEndEvent, type DragStartEvent,
 } from '@dnd-kit/core'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { depthOptions } from './engine/depth'
 import { towerDimensions } from './engine/dimensions'
@@ -21,6 +21,13 @@ import { TowerView } from './ui/TowerView'
 import { UnitBlock } from './ui/UnitBlock'
 import { specKey } from './ui/text'
 import { useEditor, type Editor } from './ui/useEditor'
+
+// three.js is large: only fetched when the 3D view is first opened.
+const TowerScene = lazy(() => import('./ui/TowerScene'))
+const VIEW_KEY = 'vault-planner:view'
+function readView(): '2d' | '3d' {
+  try { return window.localStorage.getItem(VIEW_KEY) === '3d' ? '3d' : '2d' } catch { return '2d' }
+}
 
 /**
  * Pixels per mm for the canvas: the tallest tower fills about three quarters of its height and every tower
@@ -118,6 +125,12 @@ export default function App() {
   // The canvas element, for placing the bin over it.
   const [canvasElement, setCanvasElement] = useState<HTMLElement | null>(null)
   const trackCanvas = useCallback((el: HTMLElement | null) => { setCanvasElement(el); canvasRef(el) }, [canvasRef])
+  const [view, setViewState] = useState(readView)
+  const setView = (v: '2d' | '3d') => {
+    setViewState(v)
+    try { window.localStorage.setItem(VIEW_KEY, v) } catch { /* a convenience only */ }
+  }
+  const sceneTowers = useMemo(() => layout.towers.map((tower) => ({ tower, depth: info.get(tower.id)?.depth ?? tower.depth ?? 4 })), [layout.towers, info])
 
   // Opening a share link (#share=…), on load or pasted into a tab already open: import it once, then take it out
   // of the address so a reload doesn't import it again.
@@ -213,6 +226,20 @@ export default function App() {
         onDragOver={(e) => setOverTrash(e.over?.id === 'trash')}>
         <div className="workbench">
           <Palette colours={layout.colours} onAdd={addFromPalette} fit={paletteFit} printerName={printerLabel(printer)} />
+          {view === '3d' ? (
+            <main className="canvas canvas-3d" aria-label="Towers in 3D">
+              <ViewToggle view={view} onChange={setView} />
+              <Suspense fallback={<p className="scene3d-loading">Loading the 3D view…</p>}>
+                <TowerScene
+                  towers={sceneTowers}
+                  colours={layout.colours}
+                  printer={printer}
+                  splitParts={layout.splitParts}
+                  focusUnitId={editor.selection?.type === 'unit' ? editor.selection.unitId : undefined}
+                />
+              </Suspense>
+            </main>
+          ) : (
           <Canvas
             canvasRef={trackCanvas}
             active={dragging !== null}
@@ -221,6 +248,7 @@ export default function App() {
               return empty >= 0 ? `Drop to start tower ${empty + 1}` : 'Drop to start a new tower'
             })()}
             onClickEmpty={() => editor.setSelection(null)}>
+            <ViewToggle view={view} onChange={setView} />
             <div className="towers">
               {layout.towers.map((tower, i) => {
                 const t = info.get(tower.id)
@@ -256,6 +284,7 @@ export default function App() {
             <div className="floor" aria-hidden="true" />
             {dragging?.type === 'unit' && <Trash canvas={canvasElement} />}
           </Canvas>
+          )}
           <aside className="inspector">
             {editor.notice && (
               <p className="notice" role="status">
@@ -285,6 +314,16 @@ export default function App() {
         An unofficial planner for USSA's Vault. You need your own copy of the Vault files to print anything.
         Printer sizes from Bambu Studio ({printerSource.split('@')[1]?.slice(0, 7)}).
       </footer>
+    </div>
+  )
+}
+
+/** Switch between the 2D drawing and the 3D view. */
+function ViewToggle({ view, onChange }: { view: '2d' | '3d'; onChange: (v: '2d' | '3d') => void }) {
+  return (
+    <div className="view-toggle" role="group" aria-label="View">
+      <button type="button" aria-pressed={view === '2d'} onClick={() => onChange('2d')}>2D</button>
+      <button type="button" aria-pressed={view === '3d'} onClick={() => onChange('3d')}>3D</button>
     </div>
   )
 }

@@ -72,7 +72,7 @@ function thickness(part: PartMeasure): number {
   return minAreaRect(part.outline)[1]
 }
 
-function minAreaRect(outline: readonly Point[]): [long: number, short: number] {
+export function minAreaRect(outline: readonly Point[]): [long: number, short: number] {
   let best: [number, number] = [Infinity, Infinity]
   for (let i = 0; i < outline.length; i++) {
     // The smallest rectangle around a convex outline has a side along one of its edges.
