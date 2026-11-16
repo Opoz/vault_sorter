@@ -176,6 +176,7 @@ ${p.key}`}
               size={p.size}
               axes={p.axes}
               slopeDeg={p.slopeDeg}
+              mirrored={p.mirrored}
               geometry={(() => {
                 const whole = ready?.byPath.get(p.path)
                 const piece = whole && p.piece !== undefined ? pieceGeometry(whole, p.piece) : whole
@@ -290,8 +291,8 @@ const turnOf = (axes: Axes) => {
 }
 
 /** A part: the real mesh when it has loaded, turned into place, otherwise a box at its measured size. */
-function PartBox({ center, size, axes, slopeDeg = 0, geometry, colour, faded, picked, onClick, onHover }: {
-  center: Vec3; size: Vec3; axes: Axes; slopeDeg?: number; geometry?: THREE.BufferGeometry; colour: string; faded: boolean; picked: boolean
+function PartBox({ center, size, axes, slopeDeg = 0, mirrored = false, geometry, colour, faded, picked, onClick, onHover }: {
+  center: Vec3; size: Vec3; axes: Axes; slopeDeg?: number; mirrored?: boolean; geometry?: THREE.BufferGeometry; colour: string; faded: boolean; picked: boolean
   onClick: (e: ThreeEvent<MouseEvent>) => void; onHover: (over: boolean) => void
 }) {
   const turn = useMemo(() => {
@@ -308,7 +309,7 @@ function PartBox({ center, size, axes, slopeDeg = 0, geometry, colour, faded, pi
   )
   if (geometry) {
     return (
-      <group position={center}>
+      <group position={center} scale={mirrored ? [-1, 1, 1] : 1}>
         <mesh
           geometry={geometry}
           quaternion={turn}

@@ -154,12 +154,16 @@ function roofParts(tower: Tower, resolver: Resolver): Want[] {
   }
   const handleFlag: Flag = {
     kind: 'inferred',
-    note: 'One heavyweight roof handle and one insert assumed per heavyweight roof.',
+    note: 'One heavyweight roof handle assumed per heavyweight roof.',
     source: 'File tree only',
   }
   const extras: Want[] = [
     { tidyPath: `${UNIVERSAL}/heavyweight roof handle.stl`, qty: 1, role: 'secondary', flags: [handleFlag] },
-    { tidyPath: `${UNIVERSAL}/heavyweight roof insert.stl`, qty: 1, role: 'body', flags: [handleFlag] },
+    {
+      // One in each wall's slot behind the handle (the user).
+      tidyPath: `${UNIVERSAL}/heavyweight roof insert.stl`, qty: 2, role: 'body', source: 'the user',
+      flags: [{ kind: 'inferred', note: 'Print one of the two inserts mirrored: the other side\'s slot is a mirror image.', source: 'the user' }],
+    },
   ]
   const cut = `${dir}/${w}${depth} heavyweight roof cut.stl`
   if (resolver.find(cut)) {

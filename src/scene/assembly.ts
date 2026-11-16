@@ -47,6 +47,8 @@ export interface ScenePart {
   readonly planDeg?: number
   /** Degrees about the world's z (front to back) after the turn, for a part set at a slope (the hinge pins). */
   readonly slopeDeg?: number
+  /** Printed as a mirror image (the second heavyweight roof insert): drawn mirrored side to side. */
+  readonly mirrored?: boolean
 }
 
 /** A file axis and its direction. */
@@ -188,6 +190,7 @@ function placeLine(
       center: p.center, size: p.size, groupSpread, partSpread: p.spread, axes: p.axes ?? STORED,
       ...(p.checked ? { checked: p.checked } : {}),
       ...(p.slopeDeg ? { slopeDeg: p.slopeDeg } : {}),
+      ...(p.mirrored ? { mirrored: true } : {}),
       ...(Array.isArray(placed) ? { piece: i } : {}),
       ...(() => {
         const deg = planTurn(outline, storedFootprint(p.size, p.axes ?? STORED))
@@ -197,7 +200,7 @@ function placeLine(
   }
 }
 
-interface Placement { readonly center: Vec3; readonly size: Vec3; readonly spread: Vec3; readonly axes?: Axes; readonly checked?: string; readonly slopeDeg?: number }
+interface Placement { readonly center: Vec3; readonly size: Vec3; readonly spread: Vec3; readonly axes?: Axes; readonly checked?: string; readonly slopeDeg?: number; readonly mirrored?: boolean }
 
 const name = (path: string) => path.split('/').pop()!.toLowerCase().replace(/\.stl$/, '')
 /** Sizes sorted largest first. */
@@ -559,12 +562,23 @@ function towerPart(path: string, f: Frame, n: number, qty: number, roofT: number
   const top = f.y0 + f.h
   const cx = f.x0 + f.w / 2
   const thick = (p: string) => minAreaRect(catalog.get(p).outline)[1]
-  if (/roof insert/.test(file)) return small(path, [cx, top + 30, 0], [0, 140, 0], measure)
+  // The heavyweight roof is an open bin each side of a 116 mm channel with 20 mm walls. Each wall has a keyhole slot
+  // 30 mm tall, centred 61 mm above the roof's underside: the handle bar (156.5 mm, so 20 mm into each wall) rests
+  // in its round end, near the middle of the depth, and the slot runs back from there (measured on L4). An insert
+  // fills each slot beside the bar: the right one behind it, the left one, printed mirrored, in front and turned
+  // over end for end (the user).
+  const socketY = top + 61
+  if (/roof insert/.test(file)) {
+    const [sx, sy, sz] = measure(path)
+    const side = sideOf(n)
+    return {
+      center: [cx + side * 68, socketY, side > 0 ? -31 : 35], size: [sy, sz, sx], spread: [side * 40, 140, 0], axes: side > 0 ? ['+y', '+z', '+x'] : ['+y', '-z', '-x'],
+      ...(side < 0 ? { mirrored: true } : {}), checked: 'the user',
+    }
+  }
   if (/roof handle/.test(file)) {
-    const s = measure(path)
-    const [a, b, c] = ranked(s)
-    const r = rankAxes(s)
-    return { center: [cx, top + 40, 0], size: [a, c, b], spread: [0, 120, 0], axes: [r[0], r[2], r[1]] }
+    const [sx, sy, sz] = measure(path)
+    return { center: [cx, socketY, 2], size: [sy, sx, sz], spread: [0, 120, 0], axes: ['+y', '+x', '+z'] }
   }
   if (/top handle/.test(file)) {
     // A loop 126 mm long laid side to side on the roof, its grip opening (through the file's y) facing front to back
