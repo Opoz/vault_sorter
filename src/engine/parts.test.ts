@@ -137,6 +137,14 @@ describe('partsForTower', () => {
       expect(parts['S7 Roof Part 1.stl']).toBe(1)
       expect(parts['S7 Roof Whole.stl']).toBeUndefined()
     })
+
+    // The split Base halves have a connector pocket every 80 mm along the seam (measured).
+    it('joins a split base with one connector per pocket: 2 on S up to 5 on XL', () => {
+      const connectors = (w: Unit['width']) => byFile(partsForTower(tower({
+        width: w, depth: 7, bottom: 'wheels', rows: [{ height: '1F', units: [drawer(w)] }],
+      }), { ...opts, splitParts: 'split' }))['Base Connector.stl']
+      expect([connectors('S'), connectors('M'), connectors('L'), connectors('XL')]).toEqual([2, 3, 4, 5])
+    })
   })
 
   describe('tower parts', () => {

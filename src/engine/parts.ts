@@ -187,7 +187,12 @@ const MODS = 'modifications'
 function bottomParts(tower: Tower, ctx: Ctx): Want[] {
   const { width: w, depth, bottom } = tower
   if (bottom === 'none') return []
-  const base = wholeOrSplit(ctx, `${MODS}/base/${w}`, `${w}${depth} base`, `${MODS}/base/base connector.stl`)
+  // A split Base's halves join with a connector in each pocket along the seam, one every 80 mm across: 2 on S, 3 on
+  // M, 4 on L, 5 on XL (measured on the depth-7 Base halves).
+  const baseConnectors = { S: 2, M: 3, L: 4, XL: 5 }[w]
+  const base = wholeOrSplit(ctx, `${MODS}/base/${w}`, `${w}${depth} base`, `${MODS}/base/base connector.stl`, {
+    qty: baseConnectors, source: 'Connector pockets in the split Base halves (measured)',
+  })
   const foot = `${MODS}/feet/${w} feet.stl`
   if (bottom === 'casters') return base // casters are bought, bolted under the base with M8
   if (bottom === 'feet') {
@@ -313,7 +318,7 @@ interface Ctx extends Required<PartsOptions> {
  * Parts that come both Whole and as Part 1 + Part 2 + a connector (depth 6–7 sustainer lids and bases):
  * Whole when it fits the printer, unless the layout forces one version.
  */
-function wholeOrSplit(ctx: Ctx, dir: string, stem: string, connector: string): Want[] {
+function wholeOrSplit(ctx: Ctx, dir: string, stem: string, connector: string, connectors?: { qty: number; source: string }): Want[] {
   const whole = `${dir}/${stem} whole.stl`
   const wholePath = ctx.resolver.find(whole)
   if (!wholePath) return [{ tidyPath: `${dir}/${stem}.stl`, qty: 1, role: 'body' }]
@@ -329,7 +334,9 @@ function wholeOrSplit(ctx: Ctx, dir: string, stem: string, connector: string): W
   return [
     { tidyPath: `${dir}/${stem} part 1.stl`, qty: 1, role: 'body' },
     { tidyPath: `${dir}/${stem} part 2.stl`, qty: 1, role: 'body' },
-    { tidyPath: connector, qty: 1, role: 'body', flags: [flag] },
+    connectors
+      ? { tidyPath: connector, qty: connectors.qty, role: 'body', source: connectors.source }
+      : { tidyPath: connector, qty: 1, role: 'body', flags: [flag] },
   ]
 }
 

@@ -437,13 +437,19 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       // The lid stands on end on the bed, turned: its top on the file's +x once squared up, its hollow underside
       // on −x, the corner bosses for the hinges at the back (−z) and the tab the lock catches at the front (+z).
       // It reaches over the Facade (198.1 = 188.1 + 10 on S4), its rim on the Module's top edge with the bosses
-      // 8 mm lower. Split lids: Part 1 at the front, Part 2 behind, taken to be stored the same way.
+      // 8 mm lower. A split lid's halves are stored in the whole lid's place: Part 1 is the back half, Part 2 the
+      // front (measured on S7).
       const h = half(file)
       const lidT = 27.9
-      const z = h === -1 ? -f.d / 2 + sz / 2 : front + facadeT - sz / 2
+      const z = h === 1 ? -f.d / 2 + sz / 2 : front + facadeT - sz / 2
       return { center: [cx, top + lidT / 2 - 8, z], size: [f.w, lidT, sz], spread: add(lidSpread, [0, 0, h * 15]), axes: ['-y', '+x', '+z'], ...(h === 0 ? { checked: SUSTAINER_CHECK } : {}) }
     }
-    if (/connector/.test(file)) return small(path, [cx, top + 20, 0], add(lidSpread, [0, 25, 0]), measure)
+    if (/connector/.test(file)) {
+      // A thin plate across the seam of a split lid, flat against the inside of its top (no recess shows for it;
+      // inferred). The seam is halfway along the lid, which runs from the Module's back to the Facade's front.
+      const seam = -f.d / 2 + (f.d + facadeT) / 2
+      return { center: [cx, top + 5, seam], size: [sx, sz, sy], spread: add(lidSpread, [0, -30, 0]), axes: ['+x', '+z', '-y'] }
+    }
     // The Facade is stored face up (+z) and upside down, like a drawer's: its lock recess and the notch for the
     // lock's hook are at the file's −y end, which is the top. It's set flush with the Module's top.
     const facadeTop = top
@@ -641,11 +647,20 @@ function towerPart(path: string, f: Frame, n: number, qty: number, roofT: number
   if (/\bbase\b/.test(file)) {
     const h = half(file)
     const [, , sz] = measure(path)
-    const z = h === -1 ? back + sz / 2 : f.d / 2 + 10 - sz / 2
+    // A split Base's halves are stored in the whole Base's place: Part 1 is the back half (with the rod hole), Part 2
+    // the front (measured on S7).
+    const z = h === 1 ? back + sz / 2 : f.d / 2 + 10 - sz / 2
     const square = f.w < 300
     return { center: [cx, baseTop - baseT / 2, z], size: [f.w, baseT, sz], spread: [0, 0, h * 20], axes: square ? ['-x', '-y', '+z'] : ['-y', '+x', '+z'], checked: BASE_CHECK }
   }
-  if (/connector/.test(file)) return small(path, [cx, baseBottom + 10, 0], [0, -40, 0], measure)
+  if (/connector/.test(file)) {
+    // A bar in each pair of pockets across the seam, 70 mm into each half: one every 80 mm across the width, 26 mm
+    // above the underside (measured on the depth-7 Base halves).
+    const [sx, sy, sz] = measure(path)
+    const seam = back + (f.d + 10) / 2
+    const x = (n - (qty - 1) / 2) * 80
+    return { center: [cx + x, baseBottom + 26, seam], size: [sx, sz, sy], spread: [0, -40, 0], axes: ['+x', '+z', '-y'] }
+  }
   if (/feet/.test(file)) {
     // A bar across the underside, bolted up through the Base with M6 × 90 mm bolts: with wheels, one at the front;
     // without, one at each end (Modifications p6). Its 60.5 mm puts the floor level with the wheels' bottoms.
