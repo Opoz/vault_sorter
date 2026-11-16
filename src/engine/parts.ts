@@ -410,7 +410,13 @@ function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: 
         source: 'Drawer Assembly p2; Springs.stl size',
       }],
     },
-    { tidyPath: `${UNIVERSAL}/facade cap.stl`, qty: 1, role: 'body' },
+    {
+      // Caps fill the bolt holes the label leaves open: one on an S Facade, three on the wider ones, which have four
+      // bolt holes along the bottom floor (Instructions Manual p18's M drawer; measured on the facade files). A 2F
+      // or 4F Facade has two more on its top floor, also capped (the user).
+      tidyPath: `${UNIVERSAL}/facade cap.stl`, qty: (w === 'S' ? 1 : 3) + (height === '1F' ? 0 : 2), role: 'body',
+      source: 'Drawer Assembly p6; Instructions Manual p18; the facade files',
+    },
     { tidyPath: `${UNIVERSAL}/label.stl`, qty: 1, role: 'body' },
     {
       tidyPath: xl
@@ -425,7 +431,13 @@ function drawerParts(unit: DrawerUnit, depth: number, height: string, resolver: 
       qty: 2, role: 'accent',
     },
     { tidyPath: `${UNIVERSAL}/runners/runner stopper.stl`, qty: 2, role: 'accent' },
-    { tidyPath: `${UNIVERSAL}/latch.stl`, qty: 1, role: 'body' },
+    {
+      // S and M Modules have one latch pocket underneath; L and XL Modules have two (measured on the module files).
+      tidyPath: `${UNIVERSAL}/latch.stl`, qty: w === 'L' || w === 'XL' ? 2 : 1, role: 'body',
+      ...(w === 'L' || w === 'XL' ? {
+        flags: [{ kind: 'inferred' as const, note: `${w} Modules have two latch pockets, so two latches; the manuals show only an S drawer.`, source: 'Drawer Assembly p8; the module files' }],
+      } : {}),
+    },
   ]
 
   if (unit.gearedRails) {

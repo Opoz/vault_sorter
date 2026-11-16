@@ -10,7 +10,7 @@
  */
 import type { Catalog, Point } from '../engine/catalog'
 import { MODULE_WIDTH_MM, moduleDepthMm, FLOOR_PITCH_MM, minAreaRect } from '../engine/dimensions'
-import type { Depth, Height, Width } from '../engine/model'
+import { FLOORS, type Depth, type Height, type Width } from '../engine/model'
 import { partsForTower, type ColourRole, type PartLine, type PartsOptions } from '../engine/parts'
 import { rowFloors, unitStarts, type EditorStackedUnit, type EditorTower } from '../editor/layoutOps'
 
@@ -192,6 +192,11 @@ const name = (path: string) => path.split('/').pop()!.toLowerCase().replace(/\.s
 /** Sizes sorted largest first. */
 const ranked = (s: Vec3) => [...s].sort((a, b) => b - a) as unknown as Vec3
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+/** How far right of a Facade's middle its outer capped bolt hole is, for widths with four bolts (measured). */
+const OUTER_BOLT: Partial<Record<Width, number>> = { M: 92, L: 130, XL: 170 }
+/** Widths whose Modules hold two latches. */
+const TWO_LATCHES: ReadonlySet<Width> = new Set(['L', 'XL'])
+
 /** Copy n of 2 goes on the left (−1), the other on the right (+1). */
 const sideOf = (n: number) => (n % 2 === 0 ? -1 : 1)
 /** Which half of a split part this is: Part 1 at the front, Part 2 behind; 0 when it's whole. */
@@ -210,7 +215,8 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
 
   if (unit.kind === 'drawer') {
     // Box sizes are stored upright: [width, depth, height]. Facades lie on their back: [width, height, thickness].
-    const boxW = f.w - 30.6
+    // XL Boxes are narrower for their thicker runners (377.7 mm in an XL Module, measured).
+    const boxW = f.w - (unit.width === 'XL' ? 41.1 : 30.6)
     const boxH = f.h - 10.5
     const boxBottom = f.y0 + (f.h - boxH) / 2
     const boxSpread: Vec3 = [0, 0, out]
@@ -221,11 +227,28 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       const h = half(file)
       const d = h === 0 ? f.d - 2.3 : (f.d - 2.3) / 2
       const z = front - (h === -1 ? (f.d - 2.3) * 0.75 : h === 1 ? d / 2 : d / 2)
+      if (unit.width === 'XL') {
+        // XL Boxes are open at the back (a Back Panel closes them) and print standing on end, turned on the bed:
+        // the front wall with the key notch down (the file's −z) and the floor on the file's +x once squared up.
+        // A split XL7 Box's Part 2 stands on its closed back wall instead, floor on −x (measured; inferred turn).
+        const axes: Axes = h === -1 ? ['-y', '+x', '+z'] : ['-y', '-x', '-z']
+        return { center: sitting(cx, boxBottom, z, [boxW, boxH, d]), size: [boxW, boxH, d], spread: add(boxSpread, [0, 0, h * 15]), axes }
+      }
       // Printed open side up; the end with the facade's two bolt holes and the lock notch is the file's +y.
       return { center: sitting(cx, boxBottom, z, [boxW, boxH, d]), size: [boxW, boxH, d], spread: add(boxSpread, [0, 0, h * 15]), axes: ['-x', '+z', '+y'], checked: 'Drawer Assembly p6, step 8' }
     }
     if (/back panel/.test(file)) {
       return { center: sitting(cx, boxBottom, front - f.d + 4, [boxW, boxH, 3]), size: [boxW, boxH, 3], spread: add(boxSpread, [0, 0, -30]), axes: rankAxes([sx, sy, sz]) }
+    }
+    if (/baseplate/.test(file) && unit.width === 'XL') {
+      // XL baseplates print standing on edge, turned on the bed, like the XL Boxes: flat underside on the file's −x
+      // once squared up, the Gridfinity pockets toward +x; taken to have the front end down (−z). A split XL7's
+      // Part 2 lies the other way up, flipped end for end like its Box (measured; inferred turn).
+      const h = half(file)
+      const size: Vec3 = [boxW - 9.3, 26.2, sz]
+      const z = h === -1 ? front - f.d + 2 + sz / 2 : h === 1 ? front - 2 - sz / 2 : front - 2 - sz / 2
+      const axes: Axes = h === -1 ? ['+y', '-x', '+z'] : ['+y', '+x', '-z']
+      return { center: sitting(cx, boxBottom + 2, z, size), size, spread: add(boxSpread, [0, boxH + 25, 0]), axes }
     }
     if (/baseplate/.test(file)) {
       const h = half(file)
@@ -234,23 +257,37 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       return { center: sitting(cx, boxBottom + 2, z, size), size, spread: add(boxSpread, [0, boxH + 25, 0]), axes: along(0, 2, 1) }
     }
     // Facades lie face up (+z), upside down: seen from the front, the label recess is on the left and the cap's
-    // hole on the right (Drawer Assembly p6, step 8). The cap and label sit in them, measured from the S1F file.
+    // hole on the right (Drawer Assembly p6, step 8). The key, label and caps are on the bottom floor whatever the
+    // height, 23.5 mm up from the Facade's bottom (measured on S1F, S2F and S4F; the user).
     const facadeT = 10
-    if (/facade cap/.test(file)) return { ...small(path, [cx + 51, f.y0 + f.h / 2, front + facadeT], add(boxSpread, [0, 0, 80]), measure), checked: 'Drawer Assembly p6, step 8' }
+    const lowY = f.y0 + f.h / FLOORS[unit.height] / 2
+    if (/facade cap/.test(file)) {
+      // Caps fill the bolt holes the label doesn't cover: on an S the one right of the key; wider Facades have
+      // four bolts, so one left of the key and two right of it, the outer one this far from the middle (measured
+      // on the M1F, L1F and XL facades; three caps as on Instructions Manual p18's M drawer). A 2F or 4F Facade
+      // has two more holes on its top floor, each capped (the user): the inner pair on an S, the outer pair on
+      // the wider ones (measured on S2F, M2F, L2F and L4F).
+      const outer = OUTER_BOLT[unit.width]
+      const bottom = outer === undefined ? [51] : [51, -51, outer]
+      const topY = f.y0 + f.h - f.h / FLOORS[unit.height] / 2
+      const at: [number, number] = n < bottom.length ? [bottom[n], lowY] : [sideOf(n - bottom.length) * (outer ?? 51), topY]
+      return { ...small(path, [cx + at[0], at[1], front + facadeT], add(boxSpread, [0, 0, 80]), measure), checked: 'Drawer Assembly p6, step 8; Instructions Manual p18; the user' }
+    }
     if (/\/facades\/|xl facade/i.test(path)) {
       return { center: [cx, f.y0 + f.h / 2, front + sz / 2], size: [sx, sy, sz], spread: add(boxSpread, [0, 0, 40]), axes: ['-x', '-y', '+z'], checked: 'Drawer Assembly p6, step 8' }
     }
     // The label slides into the recess on the left, its printed face (the file's +z) out (Drawer Assembly p5–6),
     // half-turned so its rounded end faces the key (the user).
     if (/^label$/.test(file)) {
-      // The recess is 2 mm deep, as thick as the label, so it sits flush with the face.
-      return { ...flat(path, [cx - 56, f.y0 + f.h / 2, front + facadeT - 1], add(boxSpread, [0, 0, 70]), measure), axes: ['-x', '-y', '+z'], checked: 'Drawer Assembly pp5–6' }
+      // The recess is 2 mm deep, as thick as the label, so it sits flush with the face, its middle 25.9 mm in from
+      // the Facade's left end on every width (measured on the S1F, M1F, L1F and XL facades).
+      return { ...flat(path, [cx - (f.w / 2 - 25.9), lowY, front + facadeT - 1], add(boxSpread, [0, 0, 70]), measure), axes: ['-x', '-y', '+z'], checked: 'Drawer Assembly pp5–6' }
     }
     // The key goes in from the back of the Facade, its knob (the file's +z) through to the front and its gear
     // behind; the cap presses onto the knob, open side (its +z) inward (Drawer Assembly p1). Both are half-turned
     // so the pin holes are on the right (the user, against p1 and p6). The knob stands about 15 mm proud.
     const faceZ = front + facadeT
-    const midY = f.y0 + f.h / 2
+    const midY = lowY
     if (/^key cap/.test(file)) {
       return { center: [cx, midY, faceZ + 15 - sz / 2 + 2], size: [sx, sy, sz], spread: add(boxSpread, [0, 0, 110]), axes: ['-x', '+y', '-z'], checked: 'Drawer Assembly p1, step 2' }
     }
@@ -263,10 +300,12 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
       return { center: [cx, midY, faceZ + (part2 ? 4 : 10) - sz / 2], size: [sx, sy, sz], spread: add(boxSpread, [0, 0, part2 ? 110 : 85]), axes: STORED }
     }
     // The latch clips into the pocket under the Module, 10–66 mm from its back whatever the depth: arms across,
-    // stem front to back with its ring at the back (Drawer Assembly p8, step 12).
+    // stem front to back with its ring at the back (Drawer Assembly p8, step 12). S and M Modules have one pocket in
+    // the middle; L and XL have two, a quarter of the width either side of it (measured on L4, L4² and XL4).
     if (/latch/.test(file)) {
       const size: Vec3 = [sx, sz, sy]
-      return { center: [cx, f.y0 + 1, -f.d / 2 + 38], size, spread: [0, -40, 0], axes: ['+x', '-z', '+y'], checked: 'Drawer Assembly p8, step 12' }
+      const x = TWO_LATCHES.has(unit.width) ? cx + sideOf(n) * (f.w / 4) : cx
+      return { center: [x, f.y0 + 1, -f.d / 2 + 38], size, spread: [0, -40, 0], axes: ['+x', '-z', '+y'], checked: 'Drawer Assembly p8, step 12' }
     }
     // The springs lie flat on the back of the Facade, one each side of the key's gear (Drawer Assembly p2). The
     // file holds both, one above the other, so each is placed as its own piece: flat side (the file's −z, printed
@@ -297,7 +336,11 @@ function unitPart(path: string, f: Frame, n: number, unit: EditorStackedUnit, me
     if (/runner slide/.test(file)) {
       // The slide's notched end (the file's −y end) is at the back (the user, against Drawer Assembly p4).
       const size: Vec3 = [sz, sx, sy]
-      const x = cx + sideOf(n) * (boxW / 2 + sz / 2)
+      // XL slides are wedges, thickening toward the back by about 2° (12.5 mm at the front, up to 22.8 mm at the
+      // back on x7; measured), so their flat outer face is set by the thin front end, not the full thickness
+      // (inferred).
+      const thick = unit.width === 'XL' ? 12.5 : sz
+      const x = cx + sideOf(n) * (boxW / 2 + thick - sz / 2)
       return {
         center: [x, runnerY, front - sy / 2 - 6], size, spread: add(boxSpread, [sideOf(n) * 22, 0, 0]),
         axes: sideOf(n) < 0 ? ['+z', '+x', '+y'] : ['-z', '-x', '+y'], checked: 'Drawer Assembly p4, step 6',

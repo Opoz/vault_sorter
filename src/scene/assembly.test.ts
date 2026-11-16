@@ -152,6 +152,37 @@ describe('runner stoppers', () => {
   })
 })
 
+describe('drawer front', () => {
+  it('keeps the key, springs, label and a cap on the bottom floor of a taller drawer, two caps on its top floor', () => {
+    const scene = assembleTower(tower('S', [[[drawer('S', '4F')]]]), 3, opts)
+    const facade = scene.find((p) => /^S4F/.test(file(p)))!
+    const fromBottom = (re: RegExp) => scene.filter((p) => re.test(file(p))).map((p) => Math.round(p.center[1] - boxBottom(facade)))
+    expect(new Set(fromBottom(/^(key|springs|label)/i))).toEqual(new Set([24]))
+    expect(fromBottom(/^facade cap/i).sort((a, b) => a - b)).toEqual([24, 168, 168])
+  })
+  it('puts two latches under an L drawer, a quarter of the width either side', () => {
+    const scene = assembleTower(tower('L', [[[drawer('L', '1F')]]]), 4, opts)
+    const module = scene.find((p) => /module/i.test(file(p)))!
+    const xs = scene.filter((p) => /latch/i.test(file(p))).map((p) => p.center[0] - module.center[0]).sort((a, b) => a - b)
+    expect(xs).toEqual([expect.closeTo(-module.size[0] / 4), expect.closeTo(module.size[0] / 4)])
+  })
+})
+
+describe('runners', () => {
+  it('stay inside the module sides at every width and depth', () => {
+    for (const w of ['S', 'M', 'L', 'XL'] as const) {
+      for (const depth of [3, 7] as const) {
+        const scene = assembleTower(tower(w, [[[drawer(w, '1F')]]]), depth, opts)
+        const module = scene.find((p) => /module/i.test(file(p)))!
+        for (const r of scene.filter((p) => /runner (guide|slide)/i.test(file(p)))) {
+          const reach = Math.abs(r.center[0] - module.center[0]) + r.size[0] / 2
+          expect([w, depth, file(r), reach <= module.size[0] / 2]).toEqual([w, depth, file(r), true])
+        }
+      }
+    }
+  })
+})
+
 describe('planTurn', () => {
   // A 100 × 20 rectangle, turned by `deg` on the bed.
   const turned = (deg: number) => {

@@ -53,6 +53,22 @@ describe('partsForTower', () => {
       expect(one(drawer('M', { gearedRails: true }))['M Rails.stl']).toBe(1)
     })
 
+    // The module files have one latch pocket on S and M, two on L and XL; the facades leave one bolt hole for a
+    // cap on S and three on the wider ones (Instructions Manual p18).
+    it('counts latches and facade caps by width', () => {
+      const counts = (w: Unit['width']) => { const p = one(drawer(w)); return [p['Latch.stl'], p['Facade Cap.stl']] }
+      expect(counts('S')).toEqual([1, 1])
+      expect(counts('M')).toEqual([1, 3])
+      expect(counts('L')).toEqual([2, 3])
+      expect(counts('XL')).toEqual([2, 3])
+    })
+
+    it('adds two caps for the top floor holes of a 2F or 4F facade', () => {
+      const caps = (w: Unit['width'], height: Height) =>
+        byFile(partsForTower(tower({ width: w, depth: 3, rows: [{ height, units: [drawer(w)] }] }), opts))['Facade Cap.stl']
+      expect([caps('S', '2F'), caps('S', '4F'), caps('L', '2F'), caps('M', '4F')]).toEqual([3, 3, 5, 5])
+    })
+
     it('swaps the key for the two-part hidden key', () => {
       const parts = one(drawer('S', { key: 'hidden' }))
       expect(parts['Hidden Key (Turn On Supports).stl']).toBe(1)
