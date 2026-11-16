@@ -86,6 +86,18 @@ _Avoid_: Drawer (for the tray itself), tray, bin
 The front plate bolted to a Box. One Facade fits every Depth of its Width and Height.
 _Avoid_: Front, face
 
+## Sustainer parts
+
+**Lid**:
+A Sustainer's hinged top, printed from its width's "Roof" file. It reaches over the Facade, and every Height of a Width shares one.
+_Avoid_: Roof (for the Sustainer's top)
+
+**Hinge top**:
+The lid's leaf of a Sustainer hinge, bolted under the lid and sharing the hinge's pin. An S or M Sustainer has one, in the middle; an L or XL one has two.
+
+**Lock** (on a Sustainer):
+The toggle latch on a Sustainer's front: a holder screwed inside the Facade, an inner part and the dark outer part that hooks over the lid. One on S and M, two on L and XL.
+
 ## Tower parts
 
 **Roof**:
@@ -93,7 +105,18 @@ The top cap of a Tower. Types are Grid, Table, Heavyweight, Bowl and Under Table
 _Avoid_: Lid (lid is the Sustainer's hinged top), top
 
 **Base**:
-The bottom plate of a mobile Tower. Wheels, feet or casters attach to it.
+The bottom plate of a mobile Tower. Wheels, feet or casters attach to it. At depths 6 and 7 it can come in two halves joined by Base connectors.
+
+**Base connector**:
+A bar joining a split Base's halves, one in each pocket along the seam: 2 on S, 3 on M, 4 on L, 5 on XL.
 
 **Backbone**:
 A vertical rear plate bolted across stacked Modules to tie a Tower together.
+
+**Pull-out handle lock**:
+The top Backbone piece of a Tower with a pull-out handle: the handle's rods run down through it, and two knobs in its back clamp them.
+_Avoid_: Lock (on its own, that's the Sustainer's)
+
+**Wall mount**:
+A plate on the back of each Module of a wall-hung Tower. It hangs on a **Wall part** screwed to the wall, one in each of its cut-outs (one on S and M, two on L and XL).
+_Avoid_: Second part (the files' name for the Wall part)
