@@ -3,12 +3,17 @@
  * hue slider, a hex field and the colours used lately.
  */
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { hexToHsv, hsvToHex, readRecent, type Hsv } from './colour'
+import { hexToHsv, hsvToHex, readRecent, RECENT_EVENT, type Hsv } from './colour'
 
 export function ColorPicker({ value, onChange, label }: { value: string; onChange: (hex: string) => void; label: string }) {
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv(value))
   const [text, setText] = useState(value)
-  const [recent] = useState(readRecent)
+  const [recent, setRecent] = useState(readRecent)
+  useEffect(() => {
+    const update = () => setRecent(readRecent())
+    window.addEventListener(RECENT_EVENT, update)
+    return () => window.removeEventListener(RECENT_EVENT, update)
+  }, [])
   const area = useRef<HTMLDivElement>(null)
   // Follow the value when it changes from outside (another swatch picked, a layout opened).
   useEffect(() => {

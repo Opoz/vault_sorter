@@ -39,4 +39,8 @@ export function rememberColour(hex: string) {
     const list = [hex.toLowerCase(), ...readRecent().filter((c) => c !== hex.toLowerCase())].slice(0, RECENT_MAX)
     localStorage.setItem(RECENT_KEY, JSON.stringify(list))
   } catch { /* not remembered: fine */ }
+  window.dispatchEvent(new Event(RECENT_EVENT))
 }
+
+/** Fired when the recent colours change, so open pickers show a colour as soon as it's used. */
+export const RECENT_EVENT = 'vault-planner:recent-colours'
